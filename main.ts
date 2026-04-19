@@ -57,9 +57,10 @@ namespace escapeRoom {
         _sequenceLength = 3
         _morseBuffer = ""
         _morseTarget = ""
+        _morseDecoded = ""
         _patternTarget = []
         _patternInput = []
-        _gestureTarget = Gesture.Shake
+        _cursorPos = 0
         basic.clearScreen()
     }
 
@@ -74,10 +75,9 @@ namespace escapeRoom {
     //% group="Feedback"
     export function showSolved(): void {
         basic.showIcon(IconNames.Yes)
-        music.play(
-            music.builtinPlayableSoundEffect(soundExpression.happy),
-            music.PlaybackMode.UntilDone
-        )
+        music.playTone(784, 200)
+        music.playTone(988, 200)
+        music.playTone(1319, 400)
     }
 
     /**
@@ -89,10 +89,7 @@ namespace escapeRoom {
     export function showWrongAndLock(seconds: number): void {
         _locked = true
         basic.showIcon(IconNames.No)
-        music.play(
-            music.builtinPlayableSoundEffect(soundExpression.sad),
-            music.PlaybackMode.UntilDone
-        )
+        music.playTone(220, 600)
         basic.pause(seconds * 1000)
         _locked = false
         basic.clearScreen()
@@ -167,19 +164,7 @@ namespace escapeRoom {
 
     let _pinTarget: number[] = []
     let _pinInput: number[] = []
-    let _pinDigit = 0          // current digit being dialled (0–9)
-
-    /**
-     * Set the secret PIN (up to 6 digits, space-separated e.g. "3 7 2")
-     * Call setPinDigit once per digit instead for block-friendly setup.
-     */
-    //% block="set PIN to %digits"
-    //% group="PIN Entry"
-    export function setPin(digits: string): void {
-        _pinTarget = digits.split(" ").map(d => parseInt(d))
-        _pinInput = []
-        _pinDigit = 0
-    }
+    let _pinDigit = 0
 
     /**
      * Add a single digit to the secret PIN
@@ -192,7 +177,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Increment the currently displayed digit (wraps 0→9→0)
+     * Increment the currently displayed digit (wraps 0 to 9 then back to 0)
      */
     //% block="increment current PIN digit"
     //% group="PIN Entry"
@@ -202,14 +187,14 @@ namespace escapeRoom {
     }
 
     /**
-     * Confirm the currently displayed digit and move to the next position
+     * Confirm the currently displayed digit and advance to the next position
      */
     //% block="confirm PIN digit"
     //% group="PIN Entry"
     export function pinConfirm(): void {
         _pinInput.push(_pinDigit)
         _pinDigit = 0
-        basic.showString("*".repeat(_pinInput.length))
+        basic.showNumber(_pinInput.length)
     }
 
     /**
@@ -249,26 +234,6 @@ namespace escapeRoom {
     //  TILT & GESTURE PUZZLES
     // ════════════════════════════════════════════════════════
 
-    let _gestureTarget: Gesture = Gesture.Shake
-
-    /**
-     * Set the secret gesture players must perform
-     */
-    //% block="set secret gesture to %gesture"
-    //% group="Gesture"
-    export function setSecretGesture(gesture: Gesture): void {
-        _gestureTarget = gesture
-    }
-
-    /**
-     * Run handler when the correct secret gesture is performed
-     */
-    //% block="on correct gesture performed"
-    //% group="Gesture"
-    export function onCorrectGesture(handler: () => void): void {
-        input.onGesture(_gestureTarget, handler)
-    }
-
     /**
      * Returns true if the micro:bit is tilted left past a threshold
      */
@@ -290,7 +255,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns true if the micro:bit is tilted forward (screen toward ground) past threshold
+     * Returns true if the micro:bit is tilted forward past a threshold
      */
     //% block="tilted forward past %threshold degrees"
     //% threshold.min=0 threshold.max=90 threshold.defl=30
@@ -300,7 +265,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns true if the micro:bit is tilted back (screen toward sky) past threshold
+     * Returns true if the micro:bit is tilted back past a threshold
      */
     //% block="tilted back past %threshold degrees"
     //% threshold.min=0 threshold.max=90 threshold.defl=30
@@ -310,7 +275,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns true if the micro:bit is held roughly flat (both axes within tolerance)
+     * Returns true if the micro:bit is held roughly flat
      */
     //% block="held flat within %tolerance degrees"
     //% tolerance.min=1 tolerance.max=45 tolerance.defl=10
@@ -323,7 +288,7 @@ namespace escapeRoom {
     }
 
     // ════════════════════════════════════════════════════════
-    //  SENSOR PUZZLES  (light, temperature, compass)
+    //  SENSOR PUZZLES
     // ════════════════════════════════════════════════════════
 
     /**
@@ -339,9 +304,9 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns true if temperature is within range (°C)
+     * Returns true if temperature is within range (degrees C)
      */
-    //% block="temperature between %low and %high °C"
+    //% block="temperature between %low and %high C"
     //% group="Sensors"
     export function tempInRange(low: number, high: number): boolean {
         const t = input.temperature()
@@ -349,9 +314,9 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns true if compass heading is within ± tolerance of a target bearing
+     * Returns true if compass heading is within tolerance of a target bearing
      */
-    //% block="compass pointing at %target ± %tolerance degrees"
+    //% block="compass pointing at %target within %tolerance degrees"
     //% target.min=0 target.max=359 target.defl=90
     //% tolerance.min=1 tolerance.max=45 tolerance.defl=15
     //% group="Sensors"
@@ -381,58 +346,58 @@ namespace escapeRoom {
 
     // ════════════════════════════════════════════════════════
     //  MORSE CODE INPUT
+    //
+    //  Short press = dot, long press = dash
+    //  morseConfirmLetter() after each letter
+    //  morseMatches() to check against target word
     // ════════════════════════════════════════════════════════
-    //
-    //  Convention:
-    //    Short press  (< 500 ms) = dot   "."
-    //    Long press   (≥ 500 ms) = dash  "-"
-    //    A+B together            = confirm / submit
-    //
-    //  Supported characters (ITU Morse):
-    //    A .-   B -...  C -.-.  D -..   E .
-    //    F ..-.  G --.   H ....  I ..    J .---
-    //    K -.-   L .-..  M --    N -.    O ---
-    //    P .--.  Q --.-  R .-.   S ...   T -
-    //    U ..-   V ...-  W .--   X -..-  Y -.--
-    //    Z --..
-    //    0 -----  1 .----  2 ..---  3 ...--  4 ....-
-    //    5 .....  6 -....  7 --...  8 ---..  9 ----.
 
-    let _morseBuffer = ""    // dots and dashes entered for current letter
-    let _morseTarget = ""    // target string (plain text, will be converted)
-    let _morseDecoded = ""   // accumulated decoded letters so far
+    let _morseBuffer = ""
+    let _morseTarget = ""
+    let _morseDecoded = ""
 
-    const MORSE_TABLE: { [key: string]: string } = {
-        ".-": "A", "-...": "B", "-.-.": "C", "-..": "D", ".": "E",
-        "..-.": "F", "--.": "G", "....": "H", "..": "I", ".---": "J",
-        "-.-": "K", ".-..": "L", "--": "M", "-.": "N", "---": "O",
-        ".--.": "P", "--.-": "Q", ".-.": "R", "...": "S", "-": "T",
-        "..-": "U", "...-": "V", ".--": "W", "-..-": "X", "-.--": "Y",
-        "--..": "Z",
-        "-----": "0", ".----": "1", "..---": "2", "...--": "3", "....-": "4",
-        ".....": "5", "-....": "6", "--...": "7", "---..": "8", "----.": "9"
-    }
-
-    function morseToChar(code: string): string {
-        return MORSE_TABLE[code] || "?"
-    }
-
-    function textToMorse(text: string): string {
-        let result = ""
-        for (let i = 0; i < text.length; i++) {
-            const ch = text.charAt(i).toUpperCase()
-            for (const code in MORSE_TABLE) {
-                if (MORSE_TABLE[code] === ch) {
-                    result += code
-                    break
-                }
-            }
-        }
-        return result
+    function _morseToChar(code: string): string {
+        if (code == ".-")    return "A"
+        if (code == "-...")  return "B"
+        if (code == "-.-.")  return "C"
+        if (code == "-..")   return "D"
+        if (code == ".")     return "E"
+        if (code == "..-.")  return "F"
+        if (code == "--.")   return "G"
+        if (code == "....")  return "H"
+        if (code == "..")    return "I"
+        if (code == ".---")  return "J"
+        if (code == "-.-")   return "K"
+        if (code == ".-..")  return "L"
+        if (code == "--")    return "M"
+        if (code == "-.")    return "N"
+        if (code == "---")   return "O"
+        if (code == ".--.")  return "P"
+        if (code == "--.-")  return "Q"
+        if (code == ".-.")   return "R"
+        if (code == "...")   return "S"
+        if (code == "-")     return "T"
+        if (code == "..-")   return "U"
+        if (code == "...-")  return "V"
+        if (code == ".--")   return "W"
+        if (code == "-..-")  return "X"
+        if (code == "-.--")  return "Y"
+        if (code == "--..")  return "Z"
+        if (code == "-----") return "0"
+        if (code == ".----") return "1"
+        if (code == "..---") return "2"
+        if (code == "...--") return "3"
+        if (code == "....-") return "4"
+        if (code == ".....") return "5"
+        if (code == "-....") return "6"
+        if (code == "--...") return "7"
+        if (code == "---..") return "8"
+        if (code == "----.") return "9"
+        return "?"
     }
 
     /**
-     * Set the secret word or phrase players must morse-code in (letters/digits only)
+     * Set the secret word players must enter in Morse code (letters and digits only)
      */
     //% block="set Morse target to %word"
     //% group="Morse Code"
@@ -443,33 +408,31 @@ namespace escapeRoom {
     }
 
     /**
-     * Record a dot "." into the current Morse letter
+     * Record a dot into the current Morse letter
      */
     //% block="morse dot"
     //% group="Morse Code"
     export function morseDot(): void {
         _morseBuffer += "."
-        basic.showLeds(`
-            . . . . .
-            . . . . .
-            . . # . .
-            . . . . .
-            . . . . .`)
+        led.plot(2, 2)
+        basic.pause(100)
+        led.unplot(2, 2)
     }
 
     /**
-     * Record a dash "-" into the current Morse letter
+     * Record a dash into the current Morse letter
      */
     //% block="morse dash"
     //% group="Morse Code"
     export function morseDash(): void {
         _morseBuffer += "-"
-        basic.showLeds(`
-            . . . . .
-            . . . . .
-            . # # # .
-            . . . . .
-            . . . . .`)
+        led.plot(1, 2)
+        led.plot(2, 2)
+        led.plot(3, 2)
+        basic.pause(100)
+        led.unplot(1, 2)
+        led.unplot(2, 2)
+        led.unplot(3, 2)
     }
 
     /**
@@ -478,7 +441,7 @@ namespace escapeRoom {
     //% block="confirm morse letter"
     //% group="Morse Code"
     export function morseConfirmLetter(): void {
-        const ch = morseToChar(_morseBuffer)
+        const ch = _morseToChar(_morseBuffer)
         _morseDecoded += ch
         _morseBuffer = ""
         basic.showString(ch)
@@ -494,7 +457,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Show the decoded Morse string so far
+     * Show how many letters have been decoded so far vs total
      */
     //% block="show morse progress"
     //% group="Morse Code"
@@ -515,20 +478,24 @@ namespace escapeRoom {
 
     // ════════════════════════════════════════════════════════
     //  LED PATTERN MATCHING
-    // ════════════════════════════════════════════════════════
     //
-    //  A "pattern" is a list of 0/1 values for the 25 LEDs,
-    //  stored as a flat number[] of length 25.
-    //  Players navigate a cursor with A (move) / B (toggle)
-    //  and press A+B to submit.
+    //  Pattern = 25-char string of "0"s and "1"s
+    //  e.g. "0111010001100011000101110" draws the letter E
+    //  A = move cursor, B = toggle LED, A+B = submit
+    // ════════════════════════════════════════════════════════
 
     let _patternTarget: number[] = []
-    let _patternInput: number[] = new Array(25).fill(0)
+    let _patternInput: number[] = []
     let _cursorPos = 0
 
+    function _makeEmptyPattern(): number[] {
+        const p: number[] = []
+        for (let i = 0; i < 25; i++) p.push(0)
+        return p
+    }
+
     /**
-     * Set the secret LED pattern from a 5×5 image
-     * Pass a string of 25 "0"s and "1"s, e.g. "0111010001100011000101110"
+     * Set the secret LED pattern from a 25-character string of 0s and 1s
      */
     //% block="set pattern target %bits"
     //% group="LED Pattern"
@@ -537,12 +504,12 @@ namespace escapeRoom {
         for (let i = 0; i < 25; i++) {
             _patternTarget.push(bits.charAt(i) === "1" ? 1 : 0)
         }
-        _patternInput = new Array(25).fill(0)
+        _patternInput = _makeEmptyPattern()
         _cursorPos = 0
     }
 
     /**
-     * Show the secret target pattern on the display for %ms milliseconds, then clear
+     * Flash the secret target pattern for a number of milliseconds, then clear
      */
     //% block="flash target pattern for %ms ms"
     //% ms.min=200 ms.max=5000 ms.defl=1000
@@ -592,7 +559,7 @@ namespace escapeRoom {
     //% block="clear pattern input"
     //% group="LED Pattern"
     export function clearPattern(): void {
-        _patternInput = new Array(25).fill(0)
+        _patternInput = _makeEmptyPattern()
         _cursorPos = 0
         basic.clearScreen()
     }
@@ -600,18 +567,20 @@ namespace escapeRoom {
     function _renderPattern(p: number[]): void {
         for (let row = 0; row < 5; row++) {
             for (let col = 0; col < 5; col++) {
-                led.plot(col, row)  // turn all on first...
-                if (p[row * 5 + col] === 0) led.unplot(col, row)
+                if (p[row * 5 + col] === 1) {
+                    led.plot(col, row)
+                } else {
+                    led.unplot(col, row)
+                }
             }
         }
     }
 
     function _renderPatternWithCursor(): void {
         _renderPattern(_patternInput)
-        // blink cursor position
         const row = Math.floor(_cursorPos / 5)
         const col = _cursorPos % 5
-        if (_patternInput[_cursorPos] === 0) led.plot(col, row)  // show empty cell
+        led.plot(col, row)
     }
 
     // ════════════════════════════════════════════════════════
@@ -623,7 +592,7 @@ namespace escapeRoom {
     let _timerDuration = 0
 
     /**
-     * Start a countdown timer for %seconds seconds
+     * Start a countdown timer for a number of seconds
      */
     //% block="start countdown for %seconds seconds"
     //% seconds.min=5 seconds.max=3600 seconds.defl=60
@@ -644,7 +613,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns the number of seconds remaining on the timer (0 if expired)
+     * Returns the number of seconds remaining on the timer (0 if expired or stopped)
      */
     //% block="seconds remaining"
     //% group="Timer"
@@ -673,7 +642,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Show a progress bar for remaining time (5 LEDs = full, 0 = empty)
+     * Show a 5-LED progress bar for remaining time across the middle row
      */
     //% block="show countdown bar"
     //% group="Timer"
@@ -691,7 +660,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Run %handler when the timer expires (call once at setup)
+     * Run a handler when the timer expires — call this once at setup
      */
     //% block="on timer expired"
     //% group="Timer"
@@ -715,7 +684,7 @@ namespace escapeRoom {
     let _hints: string[] = []
     let _hintIndex = 0
     let _hintUnlockTime = 0
-    let _hintDelayMs = 30000  // 30 s default between hints
+    let _hintDelayMs = 30000
 
     /**
      * Add a hint string to the hint queue
@@ -727,7 +696,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Set the minimum time in seconds players must wait between hints
+     * Set the minimum seconds players must wait between hints
      */
     //% block="set hint delay %seconds seconds"
     //% seconds.min=5 seconds.max=300 seconds.defl=30
@@ -737,7 +706,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns true if a hint is currently available to show
+     * Returns true if a hint is available to show right now
      */
     //% block="hint is available"
     //% group="Hints"
@@ -749,13 +718,13 @@ namespace escapeRoom {
     }
 
     /**
-     * Show the next hint (scrolls on screen) and start the cooldown timer
+     * Show the next hint and start the cooldown
      */
     //% block="show next hint"
     //% group="Hints"
     export function showNextHint(): void {
         if (_hintIndex >= _hints.length) {
-            basic.showString("No more hints!")
+            basic.showString("No hints left")
             return
         }
         basic.showString(_hints[_hintIndex])
@@ -773,7 +742,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Show seconds until the next hint is unlocked (0 if ready)
+     * Returns the number of seconds until the next hint is unlocked (0 if ready)
      */
     //% block="seconds until next hint"
     //% group="Hints"
@@ -790,7 +759,7 @@ namespace escapeRoom {
     let _maxAttempts = 0
 
     /**
-     * Set the maximum allowed wrong attempts (0 = unlimited)
+     * Set the maximum number of wrong attempts allowed (0 = unlimited)
      */
     //% block="set max attempts %max"
     //% max.min=0 max.max=99 max.defl=3
@@ -817,7 +786,7 @@ namespace escapeRoom {
     export function wrongAttemptCount(): number { return _attempts }
 
     /**
-     * Returns true if the player has used all their attempts (and max > 0)
+     * Returns true if the player has used all their attempts
      */
     //% block="attempts exhausted"
     //% group="Attempts"
@@ -826,7 +795,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns remaining attempts (999 if unlimited)
+     * Returns the number of attempts remaining (999 if unlimited)
      */
     //% block="attempts remaining"
     //% group="Attempts"
@@ -836,7 +805,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Show the remaining attempts as a number
+     * Show the remaining attempts as a scrolling number
      */
     //% block="show attempts remaining"
     //% group="Attempts"
@@ -849,7 +818,7 @@ namespace escapeRoom {
     // ════════════════════════════════════════════════════════
 
     /**
-     * Set a private radio group for this puzzle room (0–255)
+     * Set a private radio group for this puzzle room (0 to 255)
      */
     //% block="set puzzle radio group %group"
     //% group.min=0 group.max=255 group.defl=42
@@ -859,7 +828,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Broadcast a puzzle event string over radio
+     * Broadcast a named puzzle event over radio
      */
     //% block="broadcast event %msg"
     //% group="Radio"
@@ -868,7 +837,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Run %handler when a specific puzzle event string is received
+     * Run a handler when a specific named radio event is received
      */
     //% block="on radio event %expected"
     //% group="Radio"
@@ -888,7 +857,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Listen for a master reset and run %handler when received
+     * Listen for a master reset and automatically call resetAll then run handler
      */
     //% block="on master reset received"
     //% group="Radio"
