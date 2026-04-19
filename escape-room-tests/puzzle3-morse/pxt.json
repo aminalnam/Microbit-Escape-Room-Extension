@@ -1,0 +1,13 @@
+{
+    "name": "Escape Room Puzzle 3 Morse",
+    "description": "Tap SOS in morse code. A=dot, B=dash, A+B=confirm letter.",
+    "dependencies": {
+        "core": "*",
+        "radio": "*"
+    },
+    "files": [
+        "main.ts",
+        "main.blocks"
+    ],
+    "preferredEditor": "blocksprj"
+}

@@ -1,0 +1,13 @@
+{
+    "name": "Escape Room Puzzle 5 Light",
+    "description": "Get light level between 50 and 150. A=show reading, A+B=submit.",
+    "dependencies": {
+        "core": "*",
+        "radio": "*"
+    },
+    "files": [
+        "main.ts",
+        "main.blocks"
+    ],
+    "preferredEditor": "blocksprj"
+}
