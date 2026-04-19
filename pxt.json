@@ -1,15 +1,19 @@
 {
     "name": "escape-room",
-    "description": "Escape room puzzle blocks for micro:bit — sequences, PIN, gestures, sensors, Morse, LED patterns, timers, hints, and multi-device radio.",
+    "version": "0.0.1",
+    "description": "Escape room puzzle blocks for micro:bit",
     "license": "MIT",
+    "public": true,
     "dependencies": {
-        "device": "*"
+        "core": "*"
     },
     "files": [
         "main.ts",
         "README.md"
     ],
     "testFiles": [],
-    "supportedTargets": ["microbit"],
-    "preferredEditor": "blocksprj"
+    "supportedTargets": [
+        "microbit"
+    ],
+    "preferredEditor": "tsprj"
 }
