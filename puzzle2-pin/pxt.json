@@ -1,0 +1,11 @@
+{
+    "name": "puzzle2-pin",
+    "dependencies": {
+        "core": "*"
+    },
+    "description": "",
+    "files": [
+        "main.ts"
+    ],
+    "target": "microbit"
+}

@@ -1,0 +1,11 @@
+{
+    "name": "puzzle5-light",
+    "dependencies": {
+        "core": "*"
+    },
+    "description": "",
+    "files": [
+        "main.ts"
+    ],
+    "target": "microbit"
+}

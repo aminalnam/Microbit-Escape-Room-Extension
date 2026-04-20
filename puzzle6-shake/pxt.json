@@ -1,0 +1,11 @@
+{
+    "name": "puzzle6-shake",
+    "dependencies": {
+        "core": "*"
+    },
+    "description": "",
+    "files": [
+        "main.ts"
+    ],
+    "target": "microbit"
+}

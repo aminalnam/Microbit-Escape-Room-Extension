@@ -1,0 +1,11 @@
+{
+    "name": "puzzle1-sequence",
+    "dependencies": {
+        "core": "*"
+    },
+    "description": "",
+    "files": [
+        "main.ts"
+    ],
+    "target": "microbit"
+}

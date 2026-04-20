@@ -1,0 +1,11 @@
+{
+    "name": "puzzle3-morse",
+    "dependencies": {
+        "core": "*"
+    },
+    "description": "",
+    "files": [
+        "main.ts"
+    ],
+    "target": "microbit"
+}
