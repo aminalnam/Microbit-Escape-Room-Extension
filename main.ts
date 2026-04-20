@@ -1,13 +1,6 @@
 //% color="#000000" weight=100 icon="\uf023" block="Escape Puzzles"
 namespace escapePuzzles {
 
-    export enum Pad {
-        //% block="A"
-        A,
-        //% block="B"
-        B
-    }
-
     // --- State Variables ---
     let pinSecret = "1234"
     let pinAttempt = ""
@@ -23,7 +16,14 @@ namespace escapePuzzles {
     //% block="set secret PIN to %pin"
     //% group="PIN Code" weight=100
     export function setPin(pin: string) {
-        pinSecret = pin;
+        // Automatically strips out accidental spaces
+        let cleanPin = ""
+        for (let i = 0; i < pin.length; i++) {
+            if (pin.charAt(i) !== " ") {
+                cleanPin += pin.charAt(i)
+            }
+        }
+        pinSecret = cleanPin;
         pinAttempt = "";
         currentDigit = 0;
     }
@@ -69,36 +69,45 @@ namespace escapePuzzles {
     //% block="set secret sequence to %seq"
     //% group="Sequence" weight=100
     export function setSequence(seq: string) {
-        seqSecret = seq.toUpperCase();
-        seqAttempt = "";
+        // Automatically strips out accidental spaces
+        let cleanSeq = ""
+        for (let i = 0; i < seq.length; i++) {
+            if (seq.charAt(i) !== " ") {
+                cleanSeq += seq.charAt(i)
+            }
+        }
+        seqSecret = cleanSeq.toUpperCase()
+        seqAttempt = ""
     }
 
-    //% block="add button %button to sequence"
+    //% block="add A to sequence attempt"
     //% group="Sequence" weight=90
-    export function addSequence(button: Pad) {
-        if (button === Pad.A) {
-            seqAttempt = seqAttempt + "A";
-        } else {
-            seqAttempt = seqAttempt + "B";
-        }
+    export function addSequenceA() {
+        seqAttempt = seqAttempt + "A"
+    }
+
+    //% block="add B to sequence attempt"
+    //% group="Sequence" weight=80
+    export function addSequenceB() {
+        seqAttempt = seqAttempt + "B"
     }
 
     //% block="sequence is correct"
     //% group="Sequence" weight=70
     export function isSequenceCorrect(): boolean {
-        return seqAttempt === seqSecret;
+        return seqAttempt === seqSecret
     }
 
     //% block="clear sequence attempt"
     //% group="Sequence" weight=60
     export function clearSequence() {
-        seqAttempt = "";
+        seqAttempt = ""
     }
 
     //% block="current sequence attempt"
     //% group="Sequence" weight=50
     export function getSequenceAttempt(): string {
-        return seqAttempt;
+        return seqAttempt
     }
 }
 
