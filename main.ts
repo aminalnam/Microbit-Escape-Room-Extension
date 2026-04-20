@@ -3,7 +3,9 @@ namespace escapeRoom {
 
     export enum ButtonOption { A, B }
 
-    // --- State Management ---
+    // --- State Storage ---
+    let _locked = false
+    let _solved = false
     let _seqSecret: string[] = []
     let _seqBuffer: string[] = []
     let _pinSecret: number[] = []
@@ -12,6 +14,8 @@ namespace escapeRoom {
     let _morseSecret = ""
     let _morseBuffer = ""
     let _morseDecoded = ""
+    let _onSeqCorrect: () => void = null
+    let _onPinCorrect: () => void = null
 
     // === SEQUENCE PUZZLE ===
 
@@ -23,17 +27,19 @@ namespace escapeRoom {
     }
 
     /**
-     * Use this in a button block to add to the sequence.
+     * Use this inside an "on button pressed" block.
      */
     //% block="input sequence button %btn"
     //% group="Sequence" weight=90
     export function inputSequence(btn: ButtonOption): void {
+        if (_locked || _solved) return
         _seqBuffer.push(btn === ButtonOption.A ? "A" : "B")
         if (_seqBuffer.length > 3) _seqBuffer.shift()
+        if (isSequenceCorrect() && _onSeqCorrect) _onSeqCorrect()
     }
 
     /**
-     * Hexagonal block for 'if' statements.
+     * Hexagonal block for If-Then statements.
      */
     //% block="sequence is correct"
     //% group="Sequence" weight=80
@@ -43,6 +49,13 @@ namespace escapeRoom {
             if (_seqBuffer[i] !== _seqSecret[i]) return false
         }
         return true
+    }
+
+    //% block="on sequence correct"
+    //% group="Sequence" weight=70
+    //% handlerStatement=1
+    export function onSequenceCorrect(handler: () => void): void {
+        _onSeqCorrect = handler
     }
 
     // === PIN PUZZLE ===
@@ -56,7 +69,7 @@ namespace escapeRoom {
         for (let i = 0; i < parts.length; i++) _pinSecret.push(parseInt(parts[i]))
     }
 
-    //% block="change current PIN digit"
+    //% block="cycle PIN digit"
     //% group="PIN" weight=90
     export function cyclePinDigit(): void {
         _pinDigit = (_pinDigit + 1) % 10
@@ -72,7 +85,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Hexagonal block for 'if' statements.
+     * Hexagonal block for If-Then statements.
      */
     //% block="PIN is correct"
     //% group="PIN" weight=80
@@ -82,6 +95,13 @@ namespace escapeRoom {
             if (_pinEntered[i] !== _pinSecret[i]) return false
         }
         return true
+    }
+
+    //% block="on PIN correct"
+    //% group="PIN" weight=70
+    //% handlerStatement=1
+    export function onPinCorrect(handler: () => void): void {
+        _onPinCorrect = handler
     }
 
     // === MORSE PUZZLE ===
@@ -104,15 +124,15 @@ namespace escapeRoom {
     //% block="finish Morse letter"
     //% group="Morse" weight=85
     export function finishMorseLetter(): void {
-        // Simple mapping for demo
-        if (_morseBuffer == ".-") _morseDecoded += "A"
-        else if (_morseBuffer == "-...") _morseDecoded += "B"
-        else _morseDecoded += "?"
+        let codes = [".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..", ".---", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."]
+        let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let index = codes.indexOf(_morseBuffer)
+        _morseDecoded += (index >= 0) ? chars.charAt(index) : "?"
         _morseBuffer = ""
     }
 
     /**
-     * Hexagonal block for 'if' statements.
+     * Hexagonal block for If-Then statements.
      */
     //% block="Morse is correct"
     //% group="Morse" weight=80
@@ -120,13 +140,21 @@ namespace escapeRoom {
         return _morseDecoded === _morseSecret
     }
 
-    // === GENERAL ===
+    // === RESPONSES ===
 
     //% block="show solved"
-    //% group="General" weight=100
+    //% group="Responses" weight=100
     export function showSolved(): void {
+        _solved = true
         basic.showIcon(IconNames.Yes)
-        music.playTone(Note.C, 200)
+        music.playTone(Note.C5, 500)
+    }
+
+    //% block="reset puzzle"
+    //% group="Setup" weight=60
+    export function resetPuzzle(): void {
+        _locked = false; _solved = false; _seqBuffer = []; _pinEntered = []; _morseDecoded = ""
+        basic.clearScreen()
     }
 }
 
