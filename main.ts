@@ -3,21 +3,38 @@ namespace escapeRoom {
 
     export enum ButtonOption { A, B }
 
-    // --- State Storage ---
+    // ── shared state ─────────────────────────────────────────
     let _locked = false
     let _solved = false
+    let _attempts = 0
+    let _maxAttempts = 0
+
+    // ── sequence state ───────────────────────────────────────
     let _seqSecret: string[] = []
     let _seqBuffer: string[] = []
+    let _onSeqCorrect: () => void = null
+
+    // ── pin state ────────────────────────────────────────────
     let _pinSecret: number[] = []
     let _pinEntered: number[] = []
-    let _pinDigit = 0
+    let _pinCurrentDigit = 0
+    let _onPinCorrect: () => void = null
+
+    // ── morse state ──────────────────────────────────────────
     let _morseSecret = ""
     let _morseBuffer = ""
     let _morseDecoded = ""
-    let _onSeqCorrect: () => void = null
-    let _onPinCorrect: () => void = null
+    let _onMorseCorrect: () => void = null
 
-    // === SEQUENCE PUZZLE ===
+    // ── pattern state ────────────────────────────────────────
+    let _patSecret: number[] = []
+    let _patDrawing: number[] = []
+    let _patCursor = 0
+    let _onPatCorrect: () => void = null
+
+    // ════════════════════════════════════════════════════════
+    //  1. SEQUENCE PUZZLE
+    // ════════════════════════════════════════════════════════
 
     //% block="set secret sequence %a %b %c"
     //% group="Sequence" weight=100
@@ -27,7 +44,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Use this inside an "on button pressed" block.
+     * Action: Add a button press to the sequence attempt.
      */
     //% block="input sequence button %btn"
     //% group="Sequence" weight=90
@@ -35,11 +52,10 @@ namespace escapeRoom {
         if (_locked || _solved) return
         _seqBuffer.push(btn === ButtonOption.A ? "A" : "B")
         if (_seqBuffer.length > 3) _seqBuffer.shift()
-        if (isSequenceCorrect() && _onSeqCorrect) _onSeqCorrect()
     }
 
     /**
-     * Hexagonal block for If-Then statements.
+     * Reporter: Returns true if the sequence is correct. Use in 'if' blocks.
      */
     //% block="sequence is correct"
     //% group="Sequence" weight=80
@@ -58,7 +74,9 @@ namespace escapeRoom {
         _onSeqCorrect = handler
     }
 
-    // === PIN PUZZLE ===
+    // ════════════════════════════════════════════════════════
+    //  2. PIN PUZZLE
+    // ════════════════════════════════════════════════════════
 
     //% block="set secret PIN %pin"
     //% group="PIN" weight=100
@@ -72,20 +90,20 @@ namespace escapeRoom {
     //% block="cycle PIN digit"
     //% group="PIN" weight=90
     export function cyclePinDigit(): void {
-        _pinDigit = (_pinDigit + 1) % 10
-        basic.showNumber(_pinDigit)
+        _pinCurrentDigit = (_pinCurrentDigit + 1) % 10
+        basic.showNumber(_pinCurrentDigit)
     }
 
-    //% block="submit current PIN digit"
+    //% block="enter current PIN digit"
     //% group="PIN" weight=85
     export function enterPinDigit(): void {
-        _pinEntered.push(_pinDigit)
-        _pinDigit = 0
+        _pinEntered.push(_pinCurrentDigit)
+        _pinCurrentDigit = 0
         basic.clearScreen()
     }
 
     /**
-     * Hexagonal block for If-Then statements.
+     * Reporter: Returns true if the PIN is correct. Use in 'if' blocks.
      */
     //% block="PIN is correct"
     //% group="PIN" weight=80
@@ -97,18 +115,13 @@ namespace escapeRoom {
         return true
     }
 
-    //% block="on PIN correct"
-    //% group="PIN" weight=70
-    //% handlerStatement=1
-    export function onPinCorrect(handler: () => void): void {
-        _onPinCorrect = handler
-    }
+    // ════════════════════════════════════════════════════════
+    //  3. MORSE CODE PUZZLE
+    // ════════════════════════════════════════════════════════
 
-    // === MORSE PUZZLE ===
-
-    //% block="set secret Morse %word"
+    //% block="set secret Morse word %word"
     //% group="Morse" weight=100
-    export function setSecretMorse(word: string): void {
+    export function setSecretMorseWord(word: string): void {
         _morseSecret = word.toUpperCase()
         _morseBuffer = ""
         _morseDecoded = ""
@@ -129,10 +142,11 @@ namespace escapeRoom {
         let index = codes.indexOf(_morseBuffer)
         _morseDecoded += (index >= 0) ? chars.charAt(index) : "?"
         _morseBuffer = ""
+        basic.showString(_morseDecoded.substr(_morseDecoded.length - 1, 1))
     }
 
     /**
-     * Hexagonal block for If-Then statements.
+     * Reporter: Returns true if the word is correct. Use in 'if' blocks.
      */
     //% block="Morse is correct"
     //% group="Morse" weight=80
@@ -140,10 +154,59 @@ namespace escapeRoom {
         return _morseDecoded === _morseSecret
     }
 
-    // === RESPONSES ===
+    // ════════════════════════════════════════════════════════
+    //  4. PATTERN PUZZLE
+    // ════════════════════════════════════════════════════════
+
+    //% block="set secret pattern %bits"
+    //% group="Pattern" weight=100
+    export function setSecretPattern(bits: string): void {
+        _patSecret = []
+        for (let i = 0; i < 25; i++) _patSecret.push(bits.charAt(i) === "1" ? 1 : 0)
+        _patDrawing = []; for (let j = 0; j < 25; j++) _patDrawing.push(0)
+    }
+
+    //% block="move pattern cursor"
+    //% group="Pattern" weight=90
+    export function movePatternCursor(): void {
+        _patCursor = (_patCursor + 1) % 25
+        _refreshPattern()
+    }
+
+    //% block="toggle pattern LED"
+    //% group="Pattern" weight=85
+    export function togglePatternLed(): void {
+        _patDrawing[_patCursor] = _patDrawing[_patCursor] === 0 ? 1 : 0
+        _refreshPattern()
+    }
+
+    /**
+     * Reporter: Returns true if the pattern matches. Use in 'if' blocks.
+     */
+    //% block="pattern is correct"
+    //% group="Pattern" weight=80
+    export function isPatternCorrect(): boolean {
+        for (let i = 0; i < 25; i++) {
+            if (_patDrawing[i] !== _patSecret[i]) return false
+        }
+        return true
+    }
+
+    function _refreshPattern(): void {
+        for (let i = 0; i < 25; i++) {
+            if (_patDrawing[i] === 1) led.plot(i % 5, Math.floor(i / 5))
+            else led.unplot(i % 5, Math.floor(i / 5))
+        }
+        // Blink cursor
+        led.plot(_patCursor % 5, Math.floor(_patCursor / 5))
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  5. RESPONSES & SETUP
+    // ════════════════════════════════════════════════════════
 
     //% block="show solved"
-    //% group="Responses" weight=100
+    //% group="General" weight=100
     export function showSolved(): void {
         _solved = true
         basic.showIcon(IconNames.Yes)
@@ -151,7 +214,7 @@ namespace escapeRoom {
     }
 
     //% block="reset puzzle"
-    //% group="Setup" weight=60
+    //% group="General" weight=90
     export function resetPuzzle(): void {
         _locked = false; _solved = false; _seqBuffer = []; _pinEntered = []; _morseDecoded = ""
         basic.clearScreen()
