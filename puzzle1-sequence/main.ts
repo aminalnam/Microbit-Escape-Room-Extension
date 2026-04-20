@@ -1,24 +1,33 @@
-let sequence: string[] = []
-let secret = "ABA"
+escapeRoom.setGroup(42)
+let sequence = ""
+let solved = false
 
 input.onButtonPressed(Button.A, function () {
-    sequence.push("A")
-    checkSequence()
+    if (solved) return
+    sequence += "A"
 })
 
 input.onButtonPressed(Button.B, function () {
-    sequence.push("B")
-    checkSequence()
+    if (solved) return
+    sequence += "B"
 })
 
-function checkSequence() {
-    if (sequence.length == 3) {
-        if (sequence.join("") == secret) {
-            basic.showIcon(IconNames.Yes)
-            radio.sendString("door-open")
-        } else {
-            basic.showIcon(IconNames.No)
-        }
-        sequence = []
+input.onButtonPressed(Button.AB, function () {
+    if (solved) return
+    if (sequence == "ABA") {
+        basic.showIcon(IconNames.Yes)
+        escapeRoom.sendDoorOpen()
+        solved = true
+    } else {
+        basic.showIcon(IconNames.No)
     }
-}
+    sequence = ""
+})
+
+escapeRoom.onDoorOpen(function () {
+    basic.showIcon(IconNames.Happy)
+})
+
+input.onLogoEvent(TouchButtonEvent.Pressed, function () {
+    escapeRoom.resetAll()
+})

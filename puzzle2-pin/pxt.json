@@ -1,9 +1,9 @@
 {
     "name": "puzzle2-pin",
     "dependencies": {
-        "core": "*"
+        "core": "*",
+        "microbit-escape-room-extension": "github:aminalnam/Microbit-Escape-Room-Extension"
     },
-    "description": "",
     "files": [
         "main.ts"
     ],

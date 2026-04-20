@@ -1,36 +1,20 @@
-let currentLetter = ""
-let message = ""
-let secret = "SOS"
+escapeRoom.setGroup(42)
+let code = ""
 
 input.onButtonPressed(Button.A, function () {
-    currentLetter += "."
-    basic.showString(".")
+    code += "."
 })
 
 input.onButtonPressed(Button.B, function () {
-    currentLetter += "-"
-    basic.showString("-")
+    code += "-"
 })
 
 input.onButtonPressed(Button.AB, function () {
-    let letter = ""
-
-    if (currentLetter == "...") {
-        letter = "S"
-    } else if (currentLetter == "---") {
-        letter = "O"
+    if (code == "...---...") {
+        basic.showIcon(IconNames.Yes)
+        escapeRoom.sendDoorOpen()
+    } else {
+        basic.showIcon(IconNames.No)
     }
-
-    message += letter
-    currentLetter = ""
-
-    if (message.length == 3) {
-        if (message == secret) {
-            basic.showIcon(IconNames.Yes)
-            radio.sendString("door-open")
-        } else {
-            basic.showIcon(IconNames.No)
-        }
-        message = ""
-    }
+    code = ""
 })

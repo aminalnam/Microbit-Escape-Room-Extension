@@ -1,26 +1,20 @@
-let pin: number[] = []
-let current = 0
-let secretPin = "372"
+escapeRoom.setGroup(42)
+let pin = ""
 
 input.onButtonPressed(Button.A, function () {
-    current += 1
-    if (current > 9) {
-        current = 0
-    }
-    basic.showNumber(current)
+    pin += "1"
 })
 
 input.onButtonPressed(Button.B, function () {
-    pin.push(current)
-    basic.showIcon(IconNames.SmallDiamond)
+    pin += "2"
 })
 
 input.onButtonPressed(Button.AB, function () {
-    if (pin.join("") == secretPin) {
+    if (pin == "121") {
         basic.showIcon(IconNames.Yes)
-        radio.sendString("door-open")
+        escapeRoom.sendDoorOpen()
     } else {
         basic.showIcon(IconNames.No)
     }
-    pin = []
+    pin = ""
 })

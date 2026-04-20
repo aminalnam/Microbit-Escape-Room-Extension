@@ -1,13 +1,10 @@
-input.onButtonPressed(Button.A, function () {
-    basic.showNumber(input.lightLevel())
-})
+escapeRoom.setGroup(42)
 
 input.onButtonPressed(Button.AB, function () {
     let level = input.lightLevel()
-
-    if (level >= 50 && level <= 150) {
+    if (level > 50 && level < 150) {
         basic.showIcon(IconNames.Yes)
-        radio.sendString("door-open")
+        escapeRoom.sendDoorOpen()
     } else {
         basic.showIcon(IconNames.No)
     }

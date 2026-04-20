@@ -1,9 +1,9 @@
 {
     "name": "puzzle6-shake",
     "dependencies": {
-        "core": "*"
+        "core": "*",
+        "microbit-escape-room-extension": "github:aminalnam/Microbit-Escape-Room-Extension"
     },
-    "description": "",
     "files": [
         "main.ts"
     ],
