@@ -1,7 +1,0 @@
-{
-    "name": "Escape Room: Shake Puzzle",
-    "description": "Escape Room: Shake Puzzle",
-    "dependencies": { "core": "*" },
-    "files": ["main.ts", "main.blocks"],
-    "preferredEditor": "blocksprj"
-}

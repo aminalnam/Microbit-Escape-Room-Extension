@@ -1,7 +1,0 @@
-{
-    "name": "Escape Room: Pattern Puzzle",
-    "description": "Escape Room: Pattern Puzzle",
-    "dependencies": { "core": "*" },
-    "files": ["main.ts", "main.blocks"],
-    "preferredEditor": "blocksprj"
-}

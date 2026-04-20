@@ -1,7 +1,0 @@
-{
-    "name": "Escape Room: Compass Puzzle",
-    "description": "Escape Room: Compass Puzzle",
-    "dependencies": { "core": "*" },
-    "files": ["main.ts", "main.blocks"],
-    "preferredEditor": "blocksprj"
-}

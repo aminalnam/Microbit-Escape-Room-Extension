@@ -1,7 +1,0 @@
-{
-    "name": "Escape Room: Morse Puzzle",
-    "description": "Escape Room: Morse Puzzle",
-    "dependencies": { "core": "*" },
-    "files": ["main.ts", "main.blocks"],
-    "preferredEditor": "blocksprj"
-}
