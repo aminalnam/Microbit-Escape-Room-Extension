@@ -3,7 +3,7 @@ namespace escapeRoom {
 
     export enum ButtonOption { A, B }
 
-    // --- State ---
+    // --- State Variables ---
     let _locked = false
     let _solved = false
     
@@ -21,11 +21,13 @@ namespace escapeRoom {
     let _morseDecoded = ""
     let _onMorseCorrect: () => void = null
 
+    let _patSecret: number[] = []
+    let _patDrawing: number[] = []
+    let _patCursor = 0
+    let _onPatCorrect: () => void = null
+
     // === 1. SEQUENCE PUZZLE ===
 
-    /**
-     * Set the secret 3-button sequence.
-     */
     //% block="set secret sequence %a %b %c"
     //% group="Sequence" weight=100
     export function setSecretSequence(a: string, b: string, c: string): void {
@@ -33,24 +35,17 @@ namespace escapeRoom {
         _seqBuffer = []
     }
 
-    /**
-     * Add a press to the sequence attempt.
-     */
     //% block="input sequence %btn"
     //% group="Sequence" weight=90
     export function inputSequence(btn: ButtonOption): void {
         if (_locked || _solved) return
-        let val = (btn === ButtonOption.A) ? "A" : "B"
-        _seqBuffer.push(val)
+        _seqBuffer.push(btn === ButtonOption.A ? "A" : "B")
         if (_seqBuffer.length > 3) _seqBuffer.shift()
-        
-        if (isSequenceCorrect() && _onSeqCorrect) {
-            _onSeqCorrect()
-        }
+        if (isSequenceCorrect() && _onSeqCorrect) _onSeqCorrect()
     }
 
     /**
-     * Returns true if the sequence is correct.
+     * Returns true if the current sequence matches the secret.
      */
     //% block="sequence is correct"
     //% group="Sequence" weight=80
@@ -71,23 +66,15 @@ namespace escapeRoom {
 
     // === 2. PIN PUZZLE ===
 
-    /**
-     * Set the secret PIN.
-     */
     //% block="set secret PIN %pin"
     //% group="PIN" weight=100
     export function setSecretPin(pin: string): void {
         _pinSecret = []
         _pinEntered = []
         let parts = pin.split(" ")
-        for (let i = 0; i < parts.length; i++) {
-            _pinSecret.push(parseInt(parts[i]))
-        }
+        for (let i = 0; i < parts.length; i++) _pinSecret.push(parseInt(parts[i]))
     }
 
-    /**
-     * Change the current digit (0-9).
-     */
     //% block="cycle PIN digit"
     //% group="PIN" weight=90
     export function cyclePinDigit(): void {
@@ -95,9 +82,6 @@ namespace escapeRoom {
         basic.showNumber(_pinCurrentDigit)
     }
 
-    /**
-     * Enter the current digit.
-     */
     //% block="enter PIN digit"
     //% group="PIN" weight=85
     export function enterPinDigit(): void {
@@ -107,7 +91,7 @@ namespace escapeRoom {
     }
 
     /**
-     * Returns true if the PIN is correct.
+     * Returns true if the entered PIN matches the secret.
      */
     //% block="PIN is correct"
     //% group="PIN" weight=80
@@ -128,9 +112,6 @@ namespace escapeRoom {
 
     // === 3. MORSE PUZZLE ===
 
-    /**
-     * Set the Morse word.
-     */
     //% block="set secret Morse %word"
     //% group="Morse" weight=100
     export function setSecretMorse(word: string): void {
@@ -139,34 +120,38 @@ namespace escapeRoom {
         _morseDecoded = ""
     }
 
-    /**
-     * Add a dot or dash.
-     */
-    //% block="input Morse %dotDash"
+    //% block="input Morse dot"
     //% group="Morse" weight=90
-    export function inputMorse(dotDash: string): void {
-        _morseBuffer += dotDash
-    }
+    export function inputMorseDot(): void { _morseBuffer += "." }
 
-    /**
-     * Convert current dots/dashes into a letter.
-     */
-    //% block="submit Morse letter"
+    //% block="input Morse dash"
     //% group="Morse" weight=85
+    export function inputMorseDash(): void { _morseBuffer += "-" }
+
+    //% block="submit Morse letter"
+    //% group="Morse" weight=80
     export function submitMorseLetter(): void {
         let ch = _morseToChar(_morseBuffer)
         _morseDecoded += ch
         _morseBuffer = ""
         basic.showString(ch)
+        if (isMorseCorrect() && _onMorseCorrect) _onMorseCorrect()
     }
 
     /**
      * Returns true if the Morse word is correct.
      */
     //% block="Morse is correct"
-    //% group="Morse" weight=80
+    //% group="Morse" weight=75
     export function isMorseCorrect(): boolean {
         return _morseDecoded === _morseSecret
+    }
+
+    //% block="on Morse correct"
+    //% group="Morse" weight=70
+    //% handlerStatement=1
+    export function onMorseCorrect(handler: () => void): void {
+        _onMorseCorrect = handler
     }
 
     function _morseToChar(code: string): string {
@@ -177,7 +162,49 @@ namespace escapeRoom {
         return "?"
     }
 
-    // === 4. RESPONSES ===
+    // === 4. PATTERN PUZZLE ===
+
+    //% block="set secret pattern %bits"
+    //% group="Pattern" weight=100
+    export function setSecretPattern(bits: string): void {
+        _patSecret = []
+        for (let i = 0; i < 25; i++) _patSecret.push(bits.charAt(i) === "1" ? 1 : 0)
+        _patDrawing = []
+        for (let j = 0; j < 25; j++) _patDrawing.push(0)
+    }
+
+    //% block="move pattern cursor"
+    //% group="Pattern" weight=90
+    export function movePatternCursor(): void {
+        _patCursor = (_patCursor + 1) % 25
+    }
+
+    //% block="toggle pattern LED"
+    //% group="Pattern" weight=85
+    export function togglePatternLed(): void {
+        _patDrawing[_patCursor] = _patDrawing[_patCursor] === 0 ? 1 : 0
+    }
+
+    /**
+     * Returns true if the drawn pattern matches the secret.
+     */
+    //% block="pattern is correct"
+    //% group="Pattern" weight=80
+    export function isPatternCorrect(): boolean {
+        for (let i = 0; i < 25; i++) {
+            if (_patDrawing[i] !== _patSecret[i]) return false
+        }
+        return true
+    }
+
+    //% block="on pattern correct"
+    //% group="Pattern" weight=70
+    //% handlerStatement=1
+    export function onPatternCorrect(handler: () => void): void {
+        _onPatCorrect = handler
+    }
+
+    // === 5. RESPONSES ===
 
     //% block="show solved"
     //% group="General" weight=100
