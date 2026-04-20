@@ -1,72 +1,65 @@
-# micro:bit Escape Room Extension
+# Escape Room Test Projects
 
-A MakeCode extension providing puzzle-building blocks for physical escape rooms.
+Six standalone MakeCode projects for testing escape room puzzles on micro:bit.
+No extension required — each project works on its own.
 
-## Add to MakeCode
+## How to open a project in MakeCode
 
-Extensions → paste your GitHub URL.
+1. Go to **makecode.microbit.org**
+2. Click **Import** on the home screen
+3. Click **Import URL**
+4. Paste the GitHub URL for the puzzle folder you want:
 
-## Block Groups
+| Puzzle | URL to paste |
+|--------|-------------|
+| 1 — Button Sequence | `https://github.com/YOUR_USERNAME/microbit-escape-room-tests/tree/main/puzzle1-sequence` |
+| 2 — PIN Entry | `https://github.com/YOUR_USERNAME/microbit-escape-room-tests/tree/main/puzzle2-pin` |
+| 3 — Morse Code | `https://github.com/YOUR_USERNAME/microbit-escape-room-tests/tree/main/puzzle3-morse` |
+| 4 — LED Pattern | `https://github.com/YOUR_USERNAME/microbit-escape-room-tests/tree/main/puzzle4-pattern` |
+| 5 — Light Sensor | `https://github.com/YOUR_USERNAME/microbit-escape-room-tests/tree/main/puzzle5-light` |
+| 6 — Shake | `https://github.com/YOUR_USERNAME/microbit-escape-room-tests/tree/main/puzzle6-shake` |
 
-| Group | What it does |
-|---|---|
-| **Game State** | Lock/unlock, solved flag, master reset |
-| **Feedback** | Solved animation, wrong + lockout |
-| **Sequence** | Secret button sequences (A/B) |
-| **PIN Entry** | Dial-a-digit PIN with A/B |
-| **Gesture** | Tilt, shake, and orientation puzzles |
-| **Sensors** | Light, temperature, compass ranges |
-| **Morse Code** | Dot/dash input matched against a target word |
-| **LED Pattern** | Draw and match a 5×5 LED pattern |
-| **Timer** | Countdown with progress bar and expiry event |
-| **Hints** | Hint queue with cooldown delays |
-| **Attempts** | Wrong-attempt counter with max limit |
-| **Radio** | Multi-micro:bit events and master reset |
+Replace `YOUR_USERNAME` with your GitHub username.
 
-## Quick Example — Sequence Puzzle
+## Puzzle quick reference
 
-```typescript
-escapeRoom.setSequenceLength(3)
-escapeRoom.recordSecret("A")
-escapeRoom.recordSecret("B")
-escapeRoom.recordSecret("A")
+### Puzzle 1 — Button Sequence
+Secret: **A, B, A**
+- **A** = press A
+- **B** = press B
+- **A+B** = hint (3 hints, 10s cooldown each)
 
-input.onButtonPressed(Button.A, () => {
-    if (escapeRoom.isLocked() || escapeRoom.isSolved()) return
-    escapeRoom.playerPress("A")
-    if (escapeRoom.sequenceMatches()) {
-        escapeRoom.markSolved()
-        escapeRoom.showSolved()
-        escapeRoom.broadcastEvent("door-open")
-    }
-})
-input.onButtonPressed(Button.B, () => {
-    if (escapeRoom.isLocked() || escapeRoom.isSolved()) return
-    escapeRoom.playerPress("B")
-})
-```
+### Puzzle 2 — PIN Entry
+Secret: **3, 7, 2**
+- **A** = cycle digit 0→9
+- **B** = confirm digit
+- **A+B** = submit PIN
 
-## Quick Example — PIN Entry
+### Puzzle 3 — Morse Code
+Secret: **SOS**
+- **A** = dot (·)
+- **B** = dash (−)
+- **A+B** = confirm letter
+- S = `...`  O = `---`  S = `...`
 
-```typescript
-escapeRoom.addPinDigit(3)
-escapeRoom.addPinDigit(7)
-escapeRoom.addPinDigit(2)
+### Puzzle 4 — LED Pattern
+Secret: **letter T shape**
+- Pattern flashes for 2s at startup
+- **A** = move cursor
+- **B** = toggle LED
+- **A+B** = submit (wrong = pattern flashes again)
 
-// A = increment digit, B = confirm digit, A+B = submit
-input.onButtonPressed(Button.A, () => { escapeRoom.pinIncrement() })
-input.onButtonPressed(Button.B, () => { escapeRoom.pinConfirm() })
-input.onButtonPressed(Button.AB, () => {
-    if (escapeRoom.pinMatches()) {
-        escapeRoom.showSolved()
-    } else {
-        escapeRoom.recordWrongAttempt()
-        escapeRoom.showWrongAndLock(3)
-        escapeRoom.clearPin()
-    }
-})
-```
+### Puzzle 5 — Light Sensor
+Target: **light level 50–150**
+- **A** = show current reading
+- **A+B** = submit
 
-## License
+### Puzzle 6 — Shake
+- **SHAKE** = solve
+- **A** = show roll angle
+- **B** = show pitch angle
 
-MIT
+## Radio
+All puzzles are on radio group **42**.
+Solving any puzzle broadcasts `"door-open"` to all others.
+Send `"__RESET__"` to reset all micro:bits at once.

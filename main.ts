@@ -1,360 +1,317 @@
 // ============================================================
-//  Escape Room Extension for micro:bit / MakeCode
-//  Blocks namespace: escapeRoom
+//  Escape Room Extension for micro:bit
+//
+//  Design philosophy:
+//    Every puzzle works in two steps:
+//      1. Set the secret  (goes in "on start")
+//      2. React to events (on correct / on wrong / on timeout)
+//
+//    Button handling is done inside each puzzle block.
+//    Users never wire up button handlers manually.
 // ============================================================
 
 //% color="#AA278F" weight=100 icon="\uf11b" block="Escape Room"
 namespace escapeRoom {
 
-    // ════════════════════════════════════════════════════════
-    //  GAME STATE
-    // ════════════════════════════════════════════════════════
-
+    // ── shared state ─────────────────────────────────────────
     let _locked = false
     let _solved = false
+    let _attempts = 0
+    let _maxAttempts = 0
 
-    /**
-     * Returns true if the puzzle is currently locked (e.g. after a wrong attempt)
-     */
-    //% block="puzzle is locked"
-    //% group="Game State"
-    export function isLocked(): boolean { return _locked }
+    // ── hint state ───────────────────────────────────────────
+    let _hints: string[] = []
+    let _hintIndex = 0
+    let _hintCooldownEnd = 0
+    let _hintDelayMs = 30000
 
-    /**
-     * Returns true if the puzzle has been solved
-     */
-    //% block="puzzle is solved"
-    //% group="Game State"
-    export function isSolved(): boolean { return _solved }
+    // ── sequence state ───────────────────────────────────────
+    let _seqSecret: string[] = []
+    let _seqBuffer: string[] = []
+    let _seqLen = 3
+    let _onSeqCorrect: () => void = null
+    let _onSeqWrong: () => void = null
 
-    /**
-     * Mark this puzzle as solved
-     */
-    //% block="mark puzzle solved"
-    //% group="Game State"
-    export function markSolved(): void { _solved = true }
+    // ── pin state ────────────────────────────────────────────
+    let _pinSecret: number[] = []
+    let _pinEntered: number[] = []
+    let _pinCurrentDigit = 0
+    let _onPinCorrect: () => void = null
+    let _onPinWrong: () => void = null
 
-    /**
-     * Reset everything: sequences, PIN, timer, attempts, hints, Morse, patterns
-     */
-    //% block="reset all puzzles"
-    //% group="Game State"
-    export function resetAll(): void {
-        _locked = false
-        _solved = false
-        _attempts = 0
-        _maxAttempts = 0
-        _hintIndex = 0
-        _hintUnlockTime = 0
-        _timerRunning = false
-        _timerEnd = 0
-        _timerDuration = 0
-        _pinTarget = []
-        _pinInput = []
-        _pinDigit = 0
-        _recordedSequence = []
-        _inputSequence = []
-        _sequenceLength = 3
-        _morseBuffer = ""
-        _morseTarget = ""
-        _morseDecoded = ""
-        _patternTarget = []
-        _patternInput = []
-        _cursorPos = 0
-        basic.clearScreen()
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  FEEDBACK (SOLVED / WRONG)
-    // ════════════════════════════════════════════════════════
-
-    /**
-     * Show a solved animation and play a happy sound
-     */
-    //% block="show solved animation"
-    //% group="Feedback"
-    export function showSolved(): void {
-        basic.showIcon(IconNames.Yes)
-        music.playTone(784, 200)
-        music.playTone(988, 200)
-        music.playTone(1319, 400)
-    }
-
-    /**
-     * Show a wrong animation, play a sad sound, and lock input for %seconds seconds
-     */
-    //% block="show wrong and lock for %seconds seconds"
-    //% seconds.min=1 seconds.max=60 seconds.defl=3
-    //% group="Feedback"
-    export function showWrongAndLock(seconds: number): void {
-        _locked = true
-        basic.showIcon(IconNames.No)
-        music.playTone(220, 600)
-        basic.pause(seconds * 1000)
-        _locked = false
-        basic.clearScreen()
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  BUTTON SEQUENCE PUZZLES
-    // ════════════════════════════════════════════════════════
-
-    let _recordedSequence: string[] = []
-    let _inputSequence: string[] = []
-    let _sequenceLength = 3
-
-    /**
-     * Set the secret button sequence length
-     */
-    //% block="set sequence length %len"
-    //% len.min=1 len.max=10 len.defl=3
-    //% group="Sequence"
-    export function setSequenceLength(len: number): void {
-        _sequenceLength = len
-        _recordedSequence = []
-        _inputSequence = []
-    }
-
-    /**
-     * Add a button ("A" or "B") to the secret sequence
-     */
-    //% block="add %btn to secret sequence"
-    //% group="Sequence"
-    export function recordSecret(btn: string): void {
-        if (_recordedSequence.length < _sequenceLength)
-            _recordedSequence.push(btn)
-    }
-
-    /**
-     * Log a player button press attempt
-     */
-    //% block="player presses button %btn"
-    //% group="Sequence"
-    export function playerPress(btn: string): void {
-        _inputSequence.push(btn)
-        if (_inputSequence.length > _sequenceLength)
-            _inputSequence.shift()
-    }
-
-    /**
-     * Returns true if the player's last inputs match the secret sequence
-     */
-    //% block="button sequence matches"
-    //% group="Sequence"
-    export function sequenceMatches(): boolean {
-        if (_inputSequence.length < _sequenceLength) return false
-        for (let i = 0; i < _sequenceLength; i++) {
-            if (_inputSequence[i] !== _recordedSequence[i]) return false
-        }
-        return true
-    }
-
-    /**
-     * Clear the player's current sequence input
-     */
-    //% block="clear player sequence"
-    //% group="Sequence"
-    export function clearPlayerSequence(): void {
-        _inputSequence = []
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  PIN / NUMBER ENTRY
-    // ════════════════════════════════════════════════════════
-
-    let _pinTarget: number[] = []
-    let _pinInput: number[] = []
-    let _pinDigit = 0
-
-    /**
-     * Add a single digit to the secret PIN
-     */
-    //% block="add digit %d to secret PIN"
-    //% d.min=0 d.max=9 d.defl=0
-    //% group="PIN Entry"
-    export function addPinDigit(d: number): void {
-        _pinTarget.push(d)
-    }
-
-    /**
-     * Increment the currently displayed digit (wraps 0 to 9 then back to 0)
-     */
-    //% block="increment current PIN digit"
-    //% group="PIN Entry"
-    export function pinIncrement(): void {
-        _pinDigit = (_pinDigit + 1) % 10
-        basic.showNumber(_pinDigit)
-    }
-
-    /**
-     * Confirm the currently displayed digit and advance to the next position
-     */
-    //% block="confirm PIN digit"
-    //% group="PIN Entry"
-    export function pinConfirm(): void {
-        _pinInput.push(_pinDigit)
-        _pinDigit = 0
-        basic.showNumber(_pinInput.length)
-    }
-
-    /**
-     * Returns true if the entered PIN matches the secret PIN
-     */
-    //% block="PIN matches"
-    //% group="PIN Entry"
-    export function pinMatches(): boolean {
-        if (_pinInput.length !== _pinTarget.length) return false
-        for (let i = 0; i < _pinTarget.length; i++) {
-            if (_pinInput[i] !== _pinTarget[i]) return false
-        }
-        return true
-    }
-
-    /**
-     * Clear the player's PIN input (start over)
-     */
-    //% block="clear PIN input"
-    //% group="PIN Entry"
-    export function clearPin(): void {
-        _pinInput = []
-        _pinDigit = 0
-        basic.clearScreen()
-    }
-
-    /**
-     * Show how many digits have been entered so far
-     */
-    //% block="show PIN progress"
-    //% group="PIN Entry"
-    export function showPinProgress(): void {
-        basic.showString(_pinInput.length + "/" + _pinTarget.length)
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  TILT & GESTURE PUZZLES
-    // ════════════════════════════════════════════════════════
-
-    /**
-     * Returns true if the micro:bit is tilted left past a threshold
-     */
-    //% block="tilted left past %threshold degrees"
-    //% threshold.min=0 threshold.max=90 threshold.defl=30
-    //% group="Gesture"
-    export function tiltedLeft(threshold: number): boolean {
-        return input.rotation(Rotation.Roll) < -threshold
-    }
-
-    /**
-     * Returns true if the micro:bit is tilted right past a threshold
-     */
-    //% block="tilted right past %threshold degrees"
-    //% threshold.min=0 threshold.max=90 threshold.defl=30
-    //% group="Gesture"
-    export function tiltedRight(threshold: number): boolean {
-        return input.rotation(Rotation.Roll) > threshold
-    }
-
-    /**
-     * Returns true if the micro:bit is tilted forward past a threshold
-     */
-    //% block="tilted forward past %threshold degrees"
-    //% threshold.min=0 threshold.max=90 threshold.defl=30
-    //% group="Gesture"
-    export function tiltedForward(threshold: number): boolean {
-        return input.rotation(Rotation.Pitch) > threshold
-    }
-
-    /**
-     * Returns true if the micro:bit is tilted back past a threshold
-     */
-    //% block="tilted back past %threshold degrees"
-    //% threshold.min=0 threshold.max=90 threshold.defl=30
-    //% group="Gesture"
-    export function tiltedBack(threshold: number): boolean {
-        return input.rotation(Rotation.Pitch) < -threshold
-    }
-
-    /**
-     * Returns true if the micro:bit is held roughly flat
-     */
-    //% block="held flat within %tolerance degrees"
-    //% tolerance.min=1 tolerance.max=45 tolerance.defl=10
-    //% group="Gesture"
-    export function heldFlat(tolerance: number): boolean {
-        return (
-            Math.abs(input.rotation(Rotation.Roll)) <= tolerance &&
-            Math.abs(input.rotation(Rotation.Pitch)) <= tolerance
-        )
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  SENSOR PUZZLES
-    // ════════════════════════════════════════════════════════
-
-    /**
-     * Returns true if light level is within range
-     */
-    //% block="light level between %low and %high"
-    //% low.min=0 low.max=255 low.defl=100
-    //% high.min=0 high.max=255 high.defl=180
-    //% group="Sensors"
-    export function lightInRange(low: number, high: number): boolean {
-        const l = input.lightLevel()
-        return l >= low && l <= high
-    }
-
-    /**
-     * Returns true if temperature is within range (degrees C)
-     */
-    //% block="temperature between %low and %high C"
-    //% group="Sensors"
-    export function tempInRange(low: number, high: number): boolean {
-        const t = input.temperature()
-        return t >= low && t <= high
-    }
-
-    /**
-     * Returns true if compass heading is within tolerance of a target bearing
-     */
-    //% block="compass pointing at %target within %tolerance degrees"
-    //% target.min=0 target.max=359 target.defl=90
-    //% tolerance.min=1 tolerance.max=45 tolerance.defl=15
-    //% group="Sensors"
-    export function compassAtTarget(target: number, tolerance: number): boolean {
-        const h = input.compassHeading()
-        const diff = Math.abs(h - target)
-        return diff <= tolerance || diff >= (360 - tolerance)
-    }
-
-    /**
-     * Show the current compass heading as a scrolling number
-     */
-    //% block="show compass heading"
-    //% group="Sensors"
-    export function showCompassHeading(): void {
-        basic.showNumber(input.compassHeading())
-    }
-
-    /**
-     * Show the current light level as a scrolling number
-     */
-    //% block="show light level"
-    //% group="Sensors"
-    export function showLightLevel(): void {
-        basic.showNumber(input.lightLevel())
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  MORSE CODE INPUT
-    //
-    //  Short press = dot, long press = dash
-    //  morseConfirmLetter() after each letter
-    //  morseMatches() to check against target word
-    // ════════════════════════════════════════════════════════
-
+    // ── morse state ──────────────────────────────────────────
+    let _morseSecret = ""
     let _morseBuffer = ""
-    let _morseTarget = ""
     let _morseDecoded = ""
+    let _onMorseCorrect: () => void = null
+    let _onMorseWrong: () => void = null
+
+    // ── pattern state ────────────────────────────────────────
+    let _patSecret: number[] = []
+    let _patDrawing: number[] = []
+    let _patCursor = 0
+    let _onPatCorrect: () => void = null
+    let _onPatWrong: () => void = null
+
+    // ════════════════════════════════════════════════════════
+    //  SEQUENCE PUZZLE
+    //
+    //  How to use:
+    //    1. Put "set secret sequence" in on start
+    //    2. Put "on sequence correct" anywhere — runs when solved
+    //    3. Put "on sequence wrong"   anywhere — runs on bad guess
+    //
+    //  Controls (handled automatically):
+    //    A   = press A in the sequence
+    //    B   = press B in the sequence
+    //    A+B = show next hint
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * Set the secret 3-button sequence players must press.
+     * Registers the A and B button handlers automatically.
+     * Put this in "on start".
+     */
+    //% block="set secret sequence %a then %b then %c"
+    //% a.defl="A" b.defl="B" c.defl="A"
+    //% group="🔢 Sequence Puzzle" weight=100
+    //% inlineInputMode=inline
+    export function setSecretSequence(a: string, b: string, c: string): void {
+        _seqLen = 3
+        _seqSecret = [a, b, c]
+        _seqBuffer = []
+
+        input.onButtonPressed(Button.A, function () {
+            if (_locked || _solved) return
+            _seqBuffer.push("A")
+            if (_seqBuffer.length > _seqLen) _seqBuffer.shift()
+            led.plot(0, 0); basic.pause(60); led.unplot(0, 0)
+            _checkSequence()
+        })
+
+        input.onButtonPressed(Button.B, function () {
+            if (_locked || _solved) return
+            _seqBuffer.push("B")
+            if (_seqBuffer.length > _seqLen) _seqBuffer.shift()
+            led.plot(4, 0); basic.pause(60); led.unplot(4, 0)
+            _checkSequence()
+        })
+
+        input.onButtonPressed(Button.AB, function () {
+            if (!_locked && !_solved) _showHint()
+        })
+    }
+
+    function _checkSequence(): void {
+        if (_seqBuffer.length < _seqLen) return
+        let match = true
+        for (let i = 0; i < _seqLen; i++) {
+            if (_seqBuffer[i] !== _seqSecret[i]) { match = false; break }
+        }
+        if (match) {
+            if (_onSeqCorrect) _onSeqCorrect()
+        } else {
+            if (_onSeqWrong) _onSeqWrong()
+        }
+    }
+
+    /**
+     * Run this code when the player enters the correct sequence.
+     * Put "show solved" inside here.
+     */
+    //% block="on sequence correct"
+    //% group="🔢 Sequence Puzzle" weight=90
+    //% blockHandlerKey="seqCorrect"
+    export function onSequenceCorrect(handler: () => void): void {
+        _onSeqCorrect = handler
+    }
+
+    /**
+     * Run this code when the player enters a wrong sequence.
+     * Put "wrong answer" inside here.
+     */
+    //% block="on sequence wrong"
+    //% group="🔢 Sequence Puzzle" weight=80
+    //% blockHandlerKey="seqWrong"
+    export function onSequenceWrong(handler: () => void): void {
+        _onSeqWrong = handler
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  PIN PUZZLE
+    //
+    //  How to use:
+    //    1. Put "set secret PIN" in on start
+    //    2. Put "on PIN correct" anywhere — runs when solved
+    //    3. Put "on PIN wrong"   anywhere — runs on bad guess
+    //
+    //  Controls (handled automatically):
+    //    A   = scroll current digit up (0→9→0)
+    //    B   = confirm current digit
+    //    A+B = submit the full PIN (or show hint if incomplete)
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * Set the secret PIN code (e.g. "3 7 2" for PIN 372).
+     * Registers the A, B, and A+B button handlers automatically.
+     * Put this in "on start".
+     */
+    //% block="set secret PIN %pin"
+    //% pin.defl="3 7 2"
+    //% group="🔑 PIN Puzzle" weight=100
+    export function setSecretPin(pin: string): void {
+        _pinSecret = []
+        _pinEntered = []
+        _pinCurrentDigit = 0
+        let parts = pin.split(" ")
+        for (let i = 0; i < parts.length; i++) {
+            _pinSecret.push(parseInt(parts[i]))
+        }
+        basic.showNumber(0)
+
+        input.onButtonPressed(Button.A, function () {
+            if (_locked || _solved) return
+            _pinCurrentDigit = (_pinCurrentDigit + 1) % 10
+            basic.showNumber(_pinCurrentDigit)
+        })
+
+        input.onButtonPressed(Button.B, function () {
+            if (_locked || _solved) return
+            _pinEntered.push(_pinCurrentDigit)
+            _pinCurrentDigit = 0
+            basic.showString(_pinEntered.length + "/" + _pinSecret.length)
+            basic.pause(500)
+            basic.clearScreen()
+        })
+
+        input.onButtonPressed(Button.AB, function () {
+            if (_locked || _solved) return
+            // if not enough digits yet, show a hint instead
+            if (_pinEntered.length < _pinSecret.length) {
+                _showHint()
+                return
+            }
+            let match = true
+            for (let i = 0; i < _pinSecret.length; i++) {
+                if (_pinEntered[i] !== _pinSecret[i]) { match = false; break }
+            }
+            _pinEntered = []
+            _pinCurrentDigit = 0
+            if (match) {
+                if (_onPinCorrect) _onPinCorrect()
+            } else {
+                if (_onPinWrong) _onPinWrong()
+            }
+        })
+    }
+
+    /**
+     * Run this code when the player enters the correct PIN.
+     */
+    //% block="on PIN correct"
+    //% group="🔑 PIN Puzzle" weight=90
+    //% blockHandlerKey="pinCorrect"
+    export function onPinCorrect(handler: () => void): void {
+        _onPinCorrect = handler
+    }
+
+    /**
+     * Run this code when the player enters a wrong PIN.
+     */
+    //% block="on PIN wrong"
+    //% group="🔑 PIN Puzzle" weight=80
+    //% blockHandlerKey="pinWrong"
+    export function onPinWrong(handler: () => void): void {
+        _onPinWrong = handler
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  MORSE CODE PUZZLE
+    //
+    //  How to use:
+    //    1. Put "set secret Morse word" in on start
+    //    2. Put "on Morse correct" anywhere
+    //    3. Put "on Morse wrong"   anywhere
+    //
+    //  Controls (handled automatically):
+    //    A   = dot  ( . )
+    //    B   = dash ( - )
+    //    A+B = confirm the current letter
+    //
+    //  Common codes:
+    //    S = ...   O = ---   H = ....   E = .
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * Set the secret word players must tap in Morse code.
+     * Registers the A, B, and A+B button handlers automatically.
+     * Put this in "on start".
+     */
+    //% block="set secret Morse word %word"
+    //% word.defl="SOS"
+    //% group="📡 Morse Puzzle" weight=100
+    export function setSecretMorseWord(word: string): void {
+        _morseSecret = word.toUpperCase()
+        _morseBuffer = ""
+        _morseDecoded = ""
+
+        input.onButtonPressed(Button.A, function () {
+            if (_locked || _solved) return
+            _morseBuffer += "."
+            led.plot(2, 2); basic.pause(60); led.unplot(2, 2)
+        })
+
+        input.onButtonPressed(Button.B, function () {
+            if (_locked || _solved) return
+            _morseBuffer += "-"
+            led.plot(1, 2); led.plot(2, 2); led.plot(3, 2)
+            basic.pause(60)
+            led.unplot(1, 2); led.unplot(2, 2); led.unplot(3, 2)
+        })
+
+        input.onButtonPressed(Button.AB, function () {
+            if (_locked || _solved) return
+            if (_morseBuffer.length === 0) {
+                _showHint()
+                return
+            }
+            let ch = _morseToChar(_morseBuffer)
+            _morseDecoded += ch
+            _morseBuffer = ""
+            basic.showString(ch)
+            basic.pause(300)
+            basic.showString(_morseDecoded.length + "/" + _morseSecret.length)
+            basic.pause(400)
+            basic.clearScreen()
+
+            if (_morseDecoded === _morseSecret) {
+                if (_onMorseCorrect) _onMorseCorrect()
+            } else if (ch === "?" || _morseDecoded.length >= _morseSecret.length) {
+                _morseDecoded = ""
+                if (_onMorseWrong) _onMorseWrong()
+            }
+        })
+    }
+
+    /**
+     * Run this code when the player spells the correct Morse word.
+     */
+    //% block="on Morse correct"
+    //% group="📡 Morse Puzzle" weight=90
+    //% blockHandlerKey="morseCorrect"
+    export function onMorseCorrect(handler: () => void): void {
+        _onMorseCorrect = handler
+    }
+
+    /**
+     * Run this code when the player makes a Morse mistake.
+     */
+    //% block="on Morse wrong"
+    //% group="📡 Morse Puzzle" weight=80
+    //% blockHandlerKey="morseWrong"
+    export function onMorseWrong(handler: () => void): void {
+        _onMorseWrong = handler
+    }
 
     function _morseToChar(code: string): string {
         if (code == ".-")    return "A"
@@ -396,175 +353,113 @@ namespace escapeRoom {
         return "?"
     }
 
-    /**
-     * Set the secret word players must enter in Morse code (letters and digits only)
-     */
-    //% block="set Morse target to %word"
-    //% group="Morse Code"
-    export function setMorseTarget(word: string): void {
-        _morseTarget = word.toUpperCase()
-        _morseBuffer = ""
-        _morseDecoded = ""
-    }
-
-    /**
-     * Record a dot into the current Morse letter
-     */
-    //% block="morse dot"
-    //% group="Morse Code"
-    export function morseDot(): void {
-        _morseBuffer += "."
-        led.plot(2, 2)
-        basic.pause(100)
-        led.unplot(2, 2)
-    }
-
-    /**
-     * Record a dash into the current Morse letter
-     */
-    //% block="morse dash"
-    //% group="Morse Code"
-    export function morseDash(): void {
-        _morseBuffer += "-"
-        led.plot(1, 2)
-        led.plot(2, 2)
-        led.plot(3, 2)
-        basic.pause(100)
-        led.unplot(1, 2)
-        led.unplot(2, 2)
-        led.unplot(3, 2)
-    }
-
-    /**
-     * Confirm the current Morse letter and add it to the decoded string
-     */
-    //% block="confirm morse letter"
-    //% group="Morse Code"
-    export function morseConfirmLetter(): void {
-        const ch = _morseToChar(_morseBuffer)
-        _morseDecoded += ch
-        _morseBuffer = ""
-        basic.showString(ch)
-    }
-
-    /**
-     * Returns true if the decoded Morse input matches the target word
-     */
-    //% block="morse input matches target"
-    //% group="Morse Code"
-    export function morseMatches(): boolean {
-        return _morseDecoded === _morseTarget
-    }
-
-    /**
-     * Show how many letters have been decoded so far vs total
-     */
-    //% block="show morse progress"
-    //% group="Morse Code"
-    export function showMorseProgress(): void {
-        basic.showString(_morseDecoded.length + "/" + _morseTarget.length)
-    }
-
-    /**
-     * Clear Morse input and start over
-     */
-    //% block="clear morse input"
-    //% group="Morse Code"
-    export function clearMorse(): void {
-        _morseBuffer = ""
-        _morseDecoded = ""
-        basic.clearScreen()
-    }
-
     // ════════════════════════════════════════════════════════
-    //  LED PATTERN MATCHING
+    //  LED PATTERN PUZZLE
     //
-    //  Pattern = 25-char string of "0"s and "1"s
-    //  e.g. "0111010001100011000101110" draws the letter E
-    //  A = move cursor, B = toggle LED, A+B = submit
+    //  How to use:
+    //    1. Put "set secret pattern" in on start — it flashes
+    //       the pattern on screen so players can memorise it
+    //    2. Put "on pattern correct" anywhere
+    //    3. Put "on pattern wrong"   anywhere
+    //
+    //  Controls (handled automatically):
+    //    A   = move cursor to next LED
+    //    B   = toggle LED under cursor on/off
+    //    A+B = submit
     // ════════════════════════════════════════════════════════
 
-    let _patternTarget: number[] = []
-    let _patternInput: number[] = []
-    let _cursorPos = 0
+    /**
+     * Set the secret LED pattern and flash it on screen.
+     * Use 1 for on and 0 for off, 25 characters, left to right, top to bottom.
+     * Registers button handlers automatically. Put this in "on start".
+     */
+    //% block="set secret pattern %bits flash for %ms ms"
+    //% bits.defl="1111100100001000010000100"
+    //% ms.min=500 ms.max=5000 ms.defl=2000
+    //% group="💡 Pattern Puzzle" weight=100
+    //% inlineInputMode=inline
+    export function setSecretPattern(bits: string, ms: number): void {
+        _patSecret = []
+        for (let i = 0; i < 25; i++) {
+            _patSecret.push(bits.charAt(i) === "1" ? 1 : 0)
+        }
+        _patDrawing = _emptyPattern()
+        _patCursor = 0
+        _drawPattern(_patSecret)
+        basic.pause(ms)
+        basic.clearScreen()
+        basic.pause(300)
+        _drawPatternWithCursor()
 
-    function _makeEmptyPattern(): number[] {
-        const p: number[] = []
+        input.onButtonPressed(Button.A, function () {
+            if (_locked || _solved) return
+            _patCursor = (_patCursor + 1) % 25
+            _drawPatternWithCursor()
+        })
+
+        input.onButtonPressed(Button.B, function () {
+            if (_locked || _solved) return
+            _patDrawing[_patCursor] = _patDrawing[_patCursor] === 0 ? 1 : 0
+            _drawPatternWithCursor()
+        })
+
+        input.onButtonPressed(Button.AB, function () {
+            if (_locked || _solved) return
+            let ok = true
+            for (let i = 0; i < 25; i++) {
+                if (_patDrawing[i] !== _patSecret[i]) { ok = false; break }
+            }
+            if (ok) {
+                if (_onPatCorrect) _onPatCorrect()
+            } else {
+                _patDrawing = _emptyPattern()
+                _patCursor = 0
+                if (_onPatWrong) _onPatWrong()
+            }
+        })
+    }
+
+    /**
+     * Run this code when the player draws the correct pattern.
+     */
+    //% block="on pattern correct"
+    //% group="💡 Pattern Puzzle" weight=90
+    //% blockHandlerKey="patCorrect"
+    export function onPatternCorrect(handler: () => void): void {
+        _onPatCorrect = handler
+    }
+
+    /**
+     * Run this code when the player submits a wrong pattern.
+     */
+    //% block="on pattern wrong"
+    //% group="💡 Pattern Puzzle" weight=80
+    //% blockHandlerKey="patWrong"
+    export function onPatternWrong(handler: () => void): void {
+        _onPatWrong = handler
+    }
+
+    /**
+     * Flash the secret pattern on screen again (useful after a wrong guess).
+     */
+    //% block="flash secret pattern for %ms ms"
+    //% ms.min=500 ms.max=5000 ms.defl=1500
+    //% group="💡 Pattern Puzzle" weight=70
+    export function reflashPattern(ms: number): void {
+        _drawPattern(_patSecret)
+        basic.pause(ms)
+        basic.clearScreen()
+        basic.pause(300)
+        _drawPatternWithCursor()
+    }
+
+    function _emptyPattern(): number[] {
+        let p: number[] = []
         for (let i = 0; i < 25; i++) p.push(0)
         return p
     }
 
-    /**
-     * Set the secret LED pattern from a 25-character string of 0s and 1s
-     */
-    //% block="set pattern target %bits"
-    //% group="LED Pattern"
-    export function setPatternTarget(bits: string): void {
-        _patternTarget = []
-        for (let i = 0; i < 25; i++) {
-            _patternTarget.push(bits.charAt(i) === "1" ? 1 : 0)
-        }
-        _patternInput = _makeEmptyPattern()
-        _cursorPos = 0
-    }
-
-    /**
-     * Flash the secret target pattern for a number of milliseconds, then clear
-     */
-    //% block="flash target pattern for %ms ms"
-    //% ms.min=200 ms.max=5000 ms.defl=1000
-    //% group="LED Pattern"
-    export function flashTargetPattern(ms: number): void {
-        _renderPattern(_patternTarget)
-        basic.pause(ms)
-        basic.clearScreen()
-    }
-
-    /**
-     * Move the cursor to the next LED position (wraps around)
-     */
-    //% block="pattern cursor next"
-    //% group="LED Pattern"
-    export function patternCursorNext(): void {
-        _cursorPos = (_cursorPos + 1) % 25
-        _renderPatternWithCursor()
-    }
-
-    /**
-     * Toggle the LED at the current cursor position
-     */
-    //% block="pattern toggle current LED"
-    //% group="LED Pattern"
-    export function patternToggle(): void {
-        _patternInput[_cursorPos] = _patternInput[_cursorPos] === 0 ? 1 : 0
-        _renderPatternWithCursor()
-    }
-
-    /**
-     * Returns true if the player's pattern matches the target
-     */
-    //% block="LED pattern matches"
-    //% group="LED Pattern"
-    export function patternMatches(): boolean {
-        if (_patternTarget.length !== 25) return false
-        for (let i = 0; i < 25; i++) {
-            if (_patternInput[i] !== _patternTarget[i]) return false
-        }
-        return true
-    }
-
-    /**
-     * Clear the player's pattern input
-     */
-    //% block="clear pattern input"
-    //% group="LED Pattern"
-    export function clearPattern(): void {
-        _patternInput = _makeEmptyPattern()
-        _cursorPos = 0
-        basic.clearScreen()
-    }
-
-    function _renderPattern(p: number[]): void {
+    function _drawPattern(p: number[]): void {
         for (let row = 0; row < 5; row++) {
             for (let col = 0; col < 5; col++) {
                 if (p[row * 5 + col] === 1) {
@@ -576,100 +471,213 @@ namespace escapeRoom {
         }
     }
 
-    function _renderPatternWithCursor(): void {
-        _renderPattern(_patternInput)
-        const row = Math.floor(_cursorPos / 5)
-        const col = _cursorPos % 5
-        led.plot(col, row)
+    function _drawPatternWithCursor(): void {
+        _drawPattern(_patDrawing)
+        led.plot(_patCursor % 5, Math.floor(_patCursor / 5))
     }
 
     // ════════════════════════════════════════════════════════
-    //  TIMER & COUNTDOWN
+    //  SENSOR PUZZLES
+    //  These return true/false — use them inside "if" blocks
+    //  or inside "on button A+B pressed" to check and submit.
     // ════════════════════════════════════════════════════════
 
+    /**
+     * True if the light level is in the target range right now.
+     * Use A to show the reading and A+B to submit.
+     */
+    //% block="light level is between %low and %high"
+    //% low.min=0 low.max=255 low.defl=50
+    //% high.min=0 high.max=255 high.defl=150
+    //% group="🌡 Sensor Puzzles" weight=100
+    //% inlineInputMode=inline
+    export function lightBetween(low: number, high: number): boolean {
+        return input.lightLevel() >= low && input.lightLevel() <= high
+    }
+
+    /**
+     * True if the compass is pointing near a target bearing (0–359 degrees).
+     * Use A to show the heading and A+B to submit.
+     */
+    //% block="compass pointing at %degrees ° within %tolerance °"
+    //% degrees.min=0 degrees.max=359 degrees.defl=90
+    //% tolerance.min=5 tolerance.max=45 tolerance.defl=20
+    //% group="🌡 Sensor Puzzles" weight=90
+    //% inlineInputMode=inline
+    export function compassNear(degrees: number, tolerance: number): boolean {
+        let h = input.compassHeading()
+        let diff = Math.abs(h - degrees)
+        return diff <= tolerance || diff >= (360 - tolerance)
+    }
+
+    /**
+     * True if the temperature is in the target range (°C).
+     */
+    //% block="temperature is between %low and %high °C"
+    //% group="🌡 Sensor Puzzles" weight=80
+    //% inlineInputMode=inline
+    export function tempBetween(low: number, high: number): boolean {
+        return input.temperature() >= low && input.temperature() <= high
+    }
+
+    /**
+     * Show the current light level on the display.
+     */
+    //% block="show light level"
+    //% group="🌡 Sensor Puzzles" weight=70
+    export function showLightLevel(): void {
+        basic.showNumber(input.lightLevel())
+    }
+
+    /**
+     * Show the current compass heading on the display.
+     */
+    //% block="show compass heading"
+    //% group="🌡 Sensor Puzzles" weight=60
+    export function showCompassHeading(): void {
+        basic.showNumber(input.compassHeading())
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  RESPONSES
+    //  Use these inside "on correct" and "on wrong" handlers
+    // ════════════════════════════════════════════════════════
+
+    /**
+     * Show a tick and play a winning sound. Marks the puzzle as solved
+     * so no more input is accepted.
+     */
+    //% block="show solved ✓"
+    //% group="✅ Responses" weight=100
+    export function showSolved(): void {
+        _solved = true
+        basic.showIcon(IconNames.Yes)
+        music.playTone(784, 150)
+        music.playTone(988, 150)
+        music.playTone(1319, 300)
+    }
+
+    /**
+     * Show a cross, play a buzz, and block all input for a few seconds.
+     * Also counts this as one wrong attempt.
+     */
+    //% block="wrong answer — pause %seconds seconds"
+    //% seconds.min=1 seconds.max=30 seconds.defl=3
+    //% group="✅ Responses" weight=90
+    export function wrongAnswer(seconds: number): void {
+        if (_locked) return
+        _attempts++
+        _locked = true
+        basic.showIcon(IconNames.No)
+        music.playTone(220, 500)
+        basic.pause(seconds * 1000)
+        _locked = false
+        basic.clearScreen()
+    }
+
+    /**
+     * True if the player has used up all their allowed wrong guesses.
+     * Use this inside "on wrong" to decide what happens at the end.
+     */
+    //% block="out of guesses"
+    //% group="✅ Responses" weight=80
+    export function outOfGuesses(): boolean {
+        return _maxAttempts > 0 && _attempts >= _maxAttempts
+    }
+
+    /**
+     * Show the next hint. If the cooldown hasn't passed, shows the wait time.
+     * Called automatically when A+B is pressed in most puzzles.
+     * Also put this in "on button A+B pressed" for sensor puzzles.
+     */
+    //% block="show hint"
+    //% group="✅ Responses" weight=70
+    export function showHint(): void {
+        _showHint()
+    }
+
+    function _showHint(): void {
+        if (_hintIndex >= _hints.length) {
+            basic.showString("No hints")
+            return
+        }
+        if (input.runningTime() < _hintCooldownEnd) {
+            basic.showString("Wait " + Math.ceil((_hintCooldownEnd - input.runningTime()) / 1000) + "s")
+            return
+        }
+        basic.showString(_hints[_hintIndex])
+        _hintIndex++
+        _hintCooldownEnd = input.runningTime() + _hintDelayMs
+    }
+
+    /**
+     * Show the time left on the countdown.
+     */
+    //% block="show time left"
+    //% group="✅ Responses" weight=60
+    export function showTimeLeft(): void {
+        if (!_timerRunning) { basic.showNumber(0); return }
+        let r = _timerEnd - input.runningTime()
+        basic.showNumber(r > 0 ? Math.ceil(r / 1000) : 0)
+    }
+
+    // ── timer internals ──────────────────────────────────────
     let _timerRunning = false
     let _timerEnd = 0
-    let _timerDuration = 0
+
+    // ════════════════════════════════════════════════════════
+    //  GAME SETUP
+    //  Put these in "on start" alongside your puzzle block
+    // ════════════════════════════════════════════════════════
 
     /**
-     * Start a countdown timer for a number of seconds
+     * Set how many wrong guesses players are allowed (0 = unlimited).
+     * Use "out of guesses" in your "on wrong" handler to check this.
      */
-    //% block="start countdown for %seconds seconds"
-    //% seconds.min=5 seconds.max=3600 seconds.defl=60
-    //% group="Timer"
-    export function startCountdown(seconds: number): void {
-        _timerDuration = seconds * 1000
-        _timerEnd = input.runningTime() + _timerDuration
+    //% block="allow %max wrong guesses"
+    //% max.min=0 max.max=20 max.defl=3
+    //% group="⚙️ Game Setup" weight=100
+    export function allowWrong(max: number): void {
+        _maxAttempts = max
+    }
+
+    /**
+     * Add a hint message. Players press A+B to reveal hints one by one.
+     * Add one block per hint.
+     */
+    //% block="add hint %hint"
+    //% hint.defl="Try the buttons"
+    //% group="⚙️ Game Setup" weight=90
+    export function addHint(hint: string): void {
+        _hints.push(hint)
+    }
+
+    /**
+     * How many seconds players must wait between hints.
+     */
+    //% block="wait %seconds seconds between hints"
+    //% seconds.min=5 seconds.max=300 seconds.defl=30
+    //% group="⚙️ Game Setup" weight=80
+    export function timeBetweenHints(seconds: number): void {
+        _hintDelayMs = seconds * 1000
+    }
+
+    /**
+     * Start a countdown. When time runs out, run the code inside.
+     * Put this in "on start".
+     */
+    //% block="start countdown %seconds seconds — on timeout"
+    //% seconds.min=10 seconds.max=3600 seconds.defl=120
+    //% handlerStatement=1
+    //% group="⚙️ Game Setup" weight=70
+    export function startCountdown(seconds: number, onTimeout: () => void): void {
+        _timerEnd = input.runningTime() + seconds * 1000
         _timerRunning = true
-    }
-
-    /**
-     * Stop the countdown timer
-     */
-    //% block="stop countdown"
-    //% group="Timer"
-    export function stopCountdown(): void {
-        _timerRunning = false
-    }
-
-    /**
-     * Returns the number of seconds remaining on the timer (0 if expired or stopped)
-     */
-    //% block="seconds remaining"
-    //% group="Timer"
-    export function secondsRemaining(): number {
-        if (!_timerRunning) return 0
-        const remaining = _timerEnd - input.runningTime()
-        return remaining > 0 ? Math.ceil(remaining / 1000) : 0
-    }
-
-    /**
-     * Returns true if the countdown timer has expired
-     */
-    //% block="timer has expired"
-    //% group="Timer"
-    export function timerExpired(): boolean {
-        return _timerRunning && input.runningTime() >= _timerEnd
-    }
-
-    /**
-     * Show the remaining time as a scrolling number
-     */
-    //% block="show time remaining"
-    //% group="Timer"
-    export function showTimeRemaining(): void {
-        basic.showNumber(secondsRemaining())
-    }
-
-    /**
-     * Show a 5-LED progress bar for remaining time across the middle row
-     */
-    //% block="show countdown bar"
-    //% group="Timer"
-    export function showCountdownBar(): void {
-        if (!_timerRunning) { basic.clearScreen(); return }
-        const fraction = Math.max(0, (_timerEnd - input.runningTime())) / _timerDuration
-        const bars = Math.ceil(fraction * 5)
-        for (let col = 0; col < 5; col++) {
-            if (col < bars) {
-                led.plot(col, 2)
-            } else {
-                led.unplot(col, 2)
-            }
-        }
-    }
-
-    /**
-     * Run a handler when the timer expires — call this once at setup
-     */
-    //% block="on timer expired"
-    //% group="Timer"
-    export function onTimerExpired(handler: () => void): void {
-        control.inBackground(() => {
+        control.inBackground(function () {
             while (true) {
                 if (_timerRunning && input.runningTime() >= _timerEnd) {
                     _timerRunning = false
-                    handler()
+                    onTimeout()
                     break
                 }
                 basic.pause(500)
@@ -677,197 +685,26 @@ namespace escapeRoom {
         })
     }
 
-    // ════════════════════════════════════════════════════════
-    //  HINT SYSTEM
-    // ════════════════════════════════════════════════════════
-
-    let _hints: string[] = []
-    let _hintIndex = 0
-    let _hintUnlockTime = 0
-    let _hintDelayMs = 30000
-
     /**
-     * Add a hint string to the hint queue
+     * Reset the puzzle — clears all state and the display.
      */
-    //% block="add hint %hint"
-    //% group="Hints"
-    export function addHint(hint: string): void {
-        _hints.push(hint)
-    }
-
-    /**
-     * Set the minimum seconds players must wait between hints
-     */
-    //% block="set hint delay %seconds seconds"
-    //% seconds.min=5 seconds.max=300 seconds.defl=30
-    //% group="Hints"
-    export function setHintDelay(seconds: number): void {
-        _hintDelayMs = seconds * 1000
-    }
-
-    /**
-     * Returns true if a hint is available to show right now
-     */
-    //% block="hint is available"
-    //% group="Hints"
-    export function hintAvailable(): boolean {
-        return (
-            _hintIndex < _hints.length &&
-            input.runningTime() >= _hintUnlockTime
-        )
-    }
-
-    /**
-     * Show the next hint and start the cooldown
-     */
-    //% block="show next hint"
-    //% group="Hints"
-    export function showNextHint(): void {
-        if (_hintIndex >= _hints.length) {
-            basic.showString("No hints left")
-            return
-        }
-        basic.showString(_hints[_hintIndex])
-        _hintIndex++
-        _hintUnlockTime = input.runningTime() + _hintDelayMs
-    }
-
-    /**
-     * Show how many hints are left
-     */
-    //% block="show hints remaining"
-    //% group="Hints"
-    export function showHintsRemaining(): void {
-        basic.showNumber(_hints.length - _hintIndex)
-    }
-
-    /**
-     * Returns the number of seconds until the next hint is unlocked (0 if ready)
-     */
-    //% block="seconds until next hint"
-    //% group="Hints"
-    export function secondsUntilHint(): number {
-        const remaining = _hintUnlockTime - input.runningTime()
-        return remaining > 0 ? Math.ceil(remaining / 1000) : 0
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  ATTEMPT TRACKING
-    // ════════════════════════════════════════════════════════
-
-    let _attempts = 0
-    let _maxAttempts = 0
-
-    /**
-     * Set the maximum number of wrong attempts allowed (0 = unlimited)
-     */
-    //% block="set max attempts %max"
-    //% max.min=0 max.max=99 max.defl=3
-    //% group="Attempts"
-    export function setMaxAttempts(max: number): void {
-        _maxAttempts = max
+    //% block="reset puzzle"
+    //% group="⚙️ Game Setup" weight=60
+    export function resetPuzzle(): void {
+        _locked = false
+        _solved = false
         _attempts = 0
-    }
-
-    /**
-     * Record one wrong attempt
-     */
-    //% block="record wrong attempt"
-    //% group="Attempts"
-    export function recordWrongAttempt(): void {
-        _attempts++
-    }
-
-    /**
-     * Returns the number of wrong attempts so far
-     */
-    //% block="wrong attempt count"
-    //% group="Attempts"
-    export function wrongAttemptCount(): number { return _attempts }
-
-    /**
-     * Returns true if the player has used all their attempts
-     */
-    //% block="attempts exhausted"
-    //% group="Attempts"
-    export function attemptsExhausted(): boolean {
-        return _maxAttempts > 0 && _attempts >= _maxAttempts
-    }
-
-    /**
-     * Returns the number of attempts remaining (999 if unlimited)
-     */
-    //% block="attempts remaining"
-    //% group="Attempts"
-    export function attemptsRemaining(): number {
-        if (_maxAttempts === 0) return 999
-        return Math.max(0, _maxAttempts - _attempts)
-    }
-
-    /**
-     * Show the remaining attempts as a scrolling number
-     */
-    //% block="show attempts remaining"
-    //% group="Attempts"
-    export function showAttemptsRemaining(): void {
-        basic.showNumber(attemptsRemaining())
-    }
-
-    // ════════════════════════════════════════════════════════
-    //  RADIO / MULTI-MICRO:BIT
-    // ════════════════════════════════════════════════════════
-
-    /**
-     * Set a private radio group for this puzzle room (0 to 255)
-     */
-    //% block="set puzzle radio group %group"
-    //% group.min=0 group.max=255 group.defl=42
-    //% group="Radio"
-    export function setPuzzleGroup(group: number): void {
-        radio.setGroup(group)
-    }
-
-    /**
-     * Broadcast a named puzzle event over radio
-     */
-    //% block="broadcast event %msg"
-    //% group="Radio"
-    export function broadcastEvent(msg: string): void {
-        radio.sendString(msg)
-    }
-
-    /**
-     * Run a handler when a specific named radio event is received
-     */
-    //% block="on radio event %expected"
-    //% group="Radio"
-    export function onRadioEvent(expected: string, handler: () => void): void {
-        radio.onReceivedString(function (msg: string) {
-            if (msg === expected) handler()
-        })
-    }
-
-    /**
-     * Broadcast a master reset command to all micro:bits in this group
-     */
-    //% block="broadcast master reset"
-    //% group="Radio"
-    export function broadcastMasterReset(): void {
-        radio.sendString("__RESET__")
-    }
-
-    /**
-     * Listen for a master reset and automatically call resetAll then run handler
-     */
-    //% block="on master reset received"
-    //% group="Radio"
-    export function onMasterReset(handler: () => void): void {
-        radio.onReceivedString(function (msg: string) {
-            if (msg === "__RESET__") {
-                resetAll()
-                handler()
-            }
-        })
+        _hintIndex = 0
+        _hintCooldownEnd = 0
+        _timerRunning = false
+        _seqBuffer = []
+        _pinEntered = []
+        _pinCurrentDigit = 0
+        _morseBuffer = ""
+        _morseDecoded = ""
+        _patDrawing = _emptyPattern()
+        _patCursor = 0
+        basic.clearScreen()
     }
 
 }

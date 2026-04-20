@@ -1,0 +1,7 @@
+{
+    "name": "Escape Room: Sequence Puzzle",
+    "description": "Escape Room: Sequence Puzzle",
+    "dependencies": { "core": "*" },
+    "files": ["main.ts", "main.blocks"],
+    "preferredEditor": "blocksprj"
+}

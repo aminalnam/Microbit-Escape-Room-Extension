@@ -1,0 +1,13 @@
+{
+    "name": "Escape Room Puzzle 6 Shake",
+    "description": "Shake the micro:bit to solve. A=show roll, B=show pitch.",
+    "dependencies": {
+        "core": "*",
+        "radio": "*"
+    },
+    "files": [
+        "main.ts",
+        "main.blocks"
+    ],
+    "preferredEditor": "blocksprj"
+}

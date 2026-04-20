@@ -1,0 +1,7 @@
+{
+    "name": "Escape Room: PIN Puzzle",
+    "description": "Escape Room: PIN Puzzle",
+    "dependencies": { "core": "*" },
+    "files": ["main.ts", "main.blocks"],
+    "preferredEditor": "blocksprj"
+}

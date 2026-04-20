@@ -1,0 +1,7 @@
+{
+    "name": "Escape Room: Light Sensor Puzzle",
+    "description": "Escape Room: Light Sensor Puzzle",
+    "dependencies": { "core": "*" },
+    "files": ["main.ts", "main.blocks"],
+    "preferredEditor": "blocksprj"
+}
