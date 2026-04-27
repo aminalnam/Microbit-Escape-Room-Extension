@@ -1,37 +1,70 @@
-//% color="#AA278F" weight=100 icon="\uf11b" block="Escape Room"
-namespace escapeRoom {
-    
-    let inputBuffer: string = "";
+//% color="#AA278F" icon="\uf11b" block="Escape"
+namespace Escape {
+    let memory = "";
+    let dialNumber = 0;
 
-    //% block="add text %val to entered code"
-    //% group="⌨️ Code Entry" weight=100
-    export function addTextToCode(val: string): void {
-        inputBuffer += val.toUpperCase();
-        
-        // Flashes the letter on screen so you know it worked
-        basic.showString(val.toUpperCase());
+    // ==========================================
+    //  TEXT ENTRY (For Letters)
+    // ==========================================
+
+    //% block="add $letter to code"
+    //% group="Text" weight=100
+    export function addLetter(letter: string): void {
+        memory = memory + letter;
+        // Flash the letter on screen
+        basic.showString(letter);
         basic.clearScreen();
     }
 
-    //% block="clear entered code"
-    //% group="⌨️ Code Entry" weight=80
+    // ==========================================
+    //  NUMBER DIAL (For PIN Codes)
+    // ==========================================
+
+    //% block="scroll number dial up"
+    //% group="Numbers" weight=100
+    export function scrollDial(): void {
+        dialNumber++;
+        if (dialNumber > 9) {
+            dialNumber = 0;
+        }
+        // Show the current number on the dial
+        basic.showNumber(dialNumber);
+    }
+
+    //% block="enter dial number"
+    //% group="Numbers" weight=90
+    export function enterNumber(): void {
+        memory = memory + dialNumber.toString();
+        // Flash a dot to confirm the number was entered
+        basic.clearScreen();
+        led.plot(2, 2);
+        basic.pause(200);
+        basic.clearScreen();
+        // Reset dial back to 0
+        dialNumber = 0;
+    }
+
+    // ==========================================
+    //  LOGIC & MEMORY
+    // ==========================================
+
+    //% block="code ends with $password"
+    //% group="Logic" weight=100
+    export function checkPassword(password: string): boolean {
+        if (memory.length < password.length) {
+            return false;
+        }
+        let ending = memory.substr(memory.length - password.length, password.length);
+        return ending == password;
+    }
+
+    //% block="clear code"
+    //% group="Logic" weight=90
     export function clearCode(): void {
-        inputBuffer = "";
-        
-        // Flashes an X so you know the memory was wiped
+        memory = "";
+        // Flash an X to confirm memory is wiped
         basic.showIcon(IconNames.No);
         basic.pause(200);
         basic.clearScreen();
-    }
-
-    //% block="entered code ends with %secret"
-    //% group="✅ Logic" weight=100
-    export function codeEndsWith(secret: string): boolean {
-        let s = secret.toUpperCase();
-        if (inputBuffer.length < s.length) {
-            return false;
-        }
-        let endOfString = inputBuffer.substr(inputBuffer.length - s.length, s.length);
-        return endOfString === s;
     }
 }
